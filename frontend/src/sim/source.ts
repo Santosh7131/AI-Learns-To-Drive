@@ -85,8 +85,9 @@ export function benchmarkSystem(): SystemScore {
     score >= 80 ? "ultra" : score >= 60 ? "high" : score >= 35 ? "medium" : "low";
   // With WebGPU the fleet runs on the GPU, so higher tiers are reachable; on CPU
   // cap the auto-pick at High. Ultra stays opt-in either way.
+  // Default to a clean, visible fleet; High/Ultra stay one click away.
   const suggestedPreset: PresetId = webgpu
-    ? score >= 55 ? "high" : score >= 30 ? "medium" : "low"
+    ? score >= 40 ? "medium" : "low"
     : tier === "low" ? "low" : tier === "medium" ? "medium" : "high";
   return { score, tier, cores, memoryGB, webgpu, suggestedPreset };
 }

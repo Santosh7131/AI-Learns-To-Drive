@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Line, Sky, RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three-stdlib";
 import type { Telemetry, TrackGeometry } from "@/lib/api";
 import {
   computeTrackEdges,
@@ -440,9 +441,9 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const grey = useMemo(() => new THREE.Color("#5b606b"), []);
   // two-tone car silhouette: a rounded body + a darker cabin baked slightly up/back
-  const bodyGeo = useMemo(() => new THREE.BoxGeometry(6.6, 1.0, 2.9), []);
+  const bodyGeo = useMemo(() => new RoundedBoxGeometry(6.6, 1.0, 2.9, 3, 0.28), []);
   const cabinGeo = useMemo(() => {
-    const g = new THREE.BoxGeometry(3.1, 0.8, 2.15);
+    const g = new RoundedBoxGeometry(3.1, 0.8, 2.15, 3, 0.25);
     g.translate(-0.35, 0.85, 0);
     return g;
   }, []);
