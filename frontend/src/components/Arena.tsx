@@ -1,5 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from "react";
-import { Radar, Camera, MousePointerClick } from "lucide-react";
+import { Radar, Camera, MousePointerClick, Spline, Maximize2, Minimize2 } from "lucide-react";
 import { CarCanvas } from "@/components/CarCanvas";
 import { CarInspector } from "@/components/CarInspector";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -37,7 +37,7 @@ function OverlayToggle({
   title,
   disabled,
 }: {
-  active: boolean;
+  active?: boolean;
   onClick: () => void;
   children: React.ReactNode;
   title?: string;
@@ -48,10 +48,8 @@ function OverlayToggle({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors disabled:opacity-40 ${
-        active
-          ? "border-brand/40 bg-brand/10 text-brand"
-          : "bg-card text-muted-foreground hover:text-foreground"
+      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors disabled:opacity-40 ${
+        active ? "border-brand/40 bg-brand/10 text-brand" : "bg-card text-muted-foreground hover:text-foreground"
       }`}
     >
       {children}
@@ -64,15 +62,19 @@ interface ArenaProps {
   telemetryRef: React.MutableRefObject<Telemetry | null>;
   numCars: number;
   hud: HudStatSpec[];
+  active?: boolean;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-/** Shared live 3D/2D race view: renderers, floating HUD, view/camera controls,
- * click-to-inspect. Owns view-only state so both shells reuse it identically. */
-export function Arena({ track, telemetryRef, numCars, hud }: ArenaProps) {
+/** Shared live 3D/2D race view: renderers, HUD, view/camera controls, racing
+ * line, click-to-inspect, fullscreen. Owns view-only state. */
+export function Arena({ track, telemetryRef, numCars, hud, active = true, fullscreen, onToggleFullscreen }: ArenaProps) {
   const [selectedCar, setSelectedCar] = useState<number | null>(null);
   const [showSensors, setShowSensors] = useState(false);
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [chase, setChase] = useState(false);
+  const [racingLine, setRacingLine] = useState(false);
 
   useEffect(() => {
     if (selectedCar !== null && selectedCar >= numCars) setSelectedCar(null);
@@ -94,7 +96,16 @@ export function Arena({ track, telemetryRef, numCars, hud }: ArenaProps) {
               </div>
             }
           >
-            <CarScene3D track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} chase={chase} numCars={numCars} />
+            <CarScene3D
+              track={track}
+              telemetryRef={telemetryRef}
+              selectedId={selectedCar}
+              onSelect={setSelectedCar}
+              chase={chase}
+              numCars={numCars}
+              active={active}
+              showRacingLine={racingLine}
+            />
           </Suspense>
         </ErrorBoundary>
       ) : (
@@ -109,20 +120,25 @@ export function Arena({ track, telemetryRef, numCars, hud }: ArenaProps) {
       </div>
 
       {/* view + camera controls */}
-      <div className="absolute right-3 top-3 flex items-center gap-2">
+      <div className="absolute right-3 top-3 flex flex-wrap items-center justify-end gap-2">
+        {view === "3d" && (
+          <OverlayToggle active={racingLine} onClick={() => setRacingLine((s) => !s)} title="Show the ideal racing line">
+            <Spline className="h-3.5 w-3.5" /> Line
+          </OverlayToggle>
+        )}
         {view === "2d" && (
           <OverlayToggle active={showSensors} onClick={() => setShowSensors((s) => !s)}>
             <Radar className="h-3.5 w-3.5" /> Sensors
           </OverlayToggle>
         )}
         {view === "3d" && (
-          <OverlayToggle
-            active={chase}
-            disabled={selectedCar === null}
-            onClick={() => setChase((c) => !c)}
-            title={selectedCar === null ? "Select a car first" : "Chase camera"}
-          >
+          <OverlayToggle active={chase} disabled={selectedCar === null} onClick={() => setChase((c) => !c)} title={selectedCar === null ? "Select a car first" : "Chase camera"}>
             <Camera className="h-3.5 w-3.5" /> Chase
+          </OverlayToggle>
+        )}
+        {onToggleFullscreen && (
+          <OverlayToggle active={fullscreen} onClick={onToggleFullscreen} title="Fullscreen">
+            {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </OverlayToggle>
         )}
         <div className="flex rounded-lg border bg-card p-0.5 shadow-sm">
@@ -150,7 +166,7 @@ export function Arena({ track, telemetryRef, numCars, hud }: ArenaProps) {
       {selectedCar === null && (
         <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
           <MousePointerClick className="h-3 w-3" />
-          Click a car to inspect{view === "3d" ? " · drag to orbit" : ""}
+          Click a car to inspect{view === "3d" ? " · drag to orbit, right-drag to pan" : ""}
         </div>
       )}
     </div>

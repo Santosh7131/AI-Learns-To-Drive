@@ -123,7 +123,7 @@ export default function LiveApp({ onGoPlayground }: Props) {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_360px] sm:p-6">
         <section className="min-h-0 min-w-0">
           {track ? (
-            <Arena key={trackName} track={track} telemetryRef={telemetryRef} numCars={numCars} hud={hud} />
+            <Arena key={trackName} track={track} telemetryRef={telemetryRef} numCars={numCars} hud={hud} active={status === "running"} />
           ) : (
             <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl border bg-[#0a0e16] text-sm text-white/60">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />

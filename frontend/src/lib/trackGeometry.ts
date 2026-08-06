@@ -77,6 +77,56 @@ export function resampleClosed(
   return { pts: outPts, elev: outElev };
 }
 
+/**
+ * Approximate the ideal (minimum-curvature) racing line as a path that stays
+ * within the track width. Iteratively straightens the path toward each point's
+ * neighbour-midpoint (reducing curvature) while clamping its lateral offset to
+ * ~a car-width inside the edges — so it naturally cuts apexes. Purely visual:
+ * the cars never observe it (their input is only lidar + speed + heading).
+ */
+export function racingLine(pts: Pt[], halfWidth: number, iters = 600): Pt[] {
+  const M = pts.length;
+  const nx = new Float64Array(M);
+  const ny = new Float64Array(M);
+  for (let i = 0; i < M; i++) {
+    const [ax, ay] = pts[(i - 2 + M) % M];
+    const [cx, cy] = pts[(i + 2) % M];
+    let tx = cx - ax;
+    let ty = cy - ay;
+    const L = Math.hypot(tx, ty) || 1;
+    tx /= L;
+    ty /= L;
+    nx[i] = -ty;
+    ny[i] = tx;
+  }
+  const maxOff = Math.max(0, halfWidth - Math.min(halfWidth * 0.32, 6));
+  const px = new Float64Array(M);
+  const py = new Float64Array(M);
+  for (let i = 0; i < M; i++) {
+    px[i] = pts[i][0];
+    py[i] = pts[i][1];
+  }
+  const alpha = 0.35;
+  for (let it = 0; it < iters; it++) {
+    for (let i = 0; i < M; i++) {
+      const ip = (i - 1 + M) % M;
+      const inx = (i + 1) % M;
+      const mx = (px[ip] + px[inx]) * 0.5;
+      const my = (py[ip] + py[inx]) * 0.5;
+      let qx = px[i] + alpha * (mx - px[i]);
+      let qy = py[i] + alpha * (my - py[i]);
+      let off = (qx - pts[i][0]) * nx[i] + (qy - pts[i][1]) * ny[i];
+      if (off > maxOff) off = maxOff;
+      else if (off < -maxOff) off = -maxOff;
+      px[i] = pts[i][0] + nx[i] * off;
+      py[i] = pts[i][1] + ny[i] * off;
+    }
+  }
+  const out: Pt[] = [];
+  for (let i = 0; i < M; i++) out.push([px[i], py[i]]);
+  return out;
+}
+
 export function computeTrackEdges(
   pts: Pt[],
   halfWidth: number

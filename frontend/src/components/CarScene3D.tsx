@@ -7,6 +7,7 @@ import type { Telemetry, TrackGeometry } from "@/lib/api";
 import {
   computeTrackEdges,
   resampleClosed,
+  racingLine,
   terrainHeight,
   type Pt,
   type TerrainComp,
@@ -20,6 +21,8 @@ interface Props {
   onSelect: (id: number | null) => void;
   chase: boolean;
   numCars?: number;
+  active?: boolean;         // running → continuous render; paused → on-demand (GPU idles)
+  showRacingLine?: boolean; // render-only ideal line (cars never observe it)
 }
 
 const TRACK_LIFT = 0.45; // track surface above terrain
@@ -228,16 +231,16 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
   return (
     <group>
       <mesh geometry={geometry} receiveShadow castShadow>
-        <meshStandardMaterial color="#2e2f35" roughness={0.92} metalness={0.04} side={THREE.DoubleSide} />
+        <meshStandardMaterial color="#26272c" roughness={0.97} metalness={0} side={THREE.DoubleSide} />
       </mesh>
       {kerbGeom && (
         <mesh geometry={kerbGeom} receiveShadow>
-          <meshStandardMaterial vertexColors roughness={0.6} metalness={0.0} side={THREE.DoubleSide} />
+          <meshStandardMaterial vertexColors roughness={0.55} metalness={0.0} side={THREE.DoubleSide} />
         </mesh>
       )}
-      <Line points={left} color="#e9e9ee" lineWidth={2} transparent opacity={0.85} />
-      <Line points={right} color="#e9e9ee" lineWidth={2} transparent opacity={0.85} />
-      <Line points={centerLine} color="#ffffff" lineWidth={1.2} dashed dashSize={6} gapSize={9} transparent opacity={0.35} />
+      <Line points={left} color="#f4f4f7" lineWidth={2.5} transparent opacity={0.95} />
+      <Line points={right} color="#f4f4f7" lineWidth={2.5} transparent opacity={0.95} />
+      <Line points={centerLine} color="#f4d03f" lineWidth={1.4} dashed dashSize={7} gapSize={10} transparent opacity={0.55} />
       <Line points={startLine} color="#ffffff" lineWidth={6} />
     </group>
   );
@@ -348,6 +351,8 @@ interface RState {
   theta: number;
   roll: number;
   pitch: number;
+  ry: number; // render height (suspension spring)
+  rvy: number; // vertical velocity
   init: boolean;
 }
 function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<Props, "chase">) {
@@ -362,7 +367,8 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
       state.current = cars.map((c) => ({
-        x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, roll: 0, pitch: 0, init: true,
+        x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, roll: 0, pitch: 0,
+        ry: (c.z ?? 0) + CAR_LIFT, rvy: 0, init: true,
       }));
     }
     const corr = 1 - Math.exp(-7 * delta); // position/heading correction toward truth
@@ -381,7 +387,8 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
 
       if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 5) {
         // first frame or a respawn teleport: snap
-        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta; r.init = false;
+        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta;
+        r.ry = tz + CAR_LIFT; r.rvy = 0; r.init = false;
       } else {
         // predict forward by velocity, then gently correct toward authoritative state
         r.x += r.vx * delta;
@@ -394,12 +401,29 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
 
-      o.position.set(r.x, r.z + CAR_LIFT, r.y);
+      // vertical suspension spring: cars crest/launch on hills and settle
+      const groundY = r.z + CAR_LIFT;
+      if (r.ry > groundY + 0.05) {
+        r.rvy -= 42 * delta; // airborne — gravity
+      } else {
+        r.rvy += (groundY - r.ry) * 130 * delta; // grounded — stiff spring to the surface
+        r.rvy *= Math.exp(-9 * delta);
+      }
+      r.ry += r.rvy * delta;
+      if (r.ry < groundY) {
+        r.ry = groundY;
+        if (r.rvy < 0) r.rvy = -r.rvy * 0.18; // land with a small bounce
+      }
+
+      o.position.set(r.x, r.ry, r.y);
       o.rotation.y = -r.theta;
 
-      // tilt the body to the track slope (grade) + driving forces
-      const targetPitch = Math.atan(t.grade ?? 0) + ((t.accel ?? 0) - (t.brake ?? 0)) * 0.04;
-      const targetRoll = -(t.steer ?? 0) * 0.16;
+      // tilt the body to the track slope (grade), driving forces + air
+      const targetPitch =
+        Math.atan(t.grade ?? 0) +
+        ((t.accel ?? 0) - (t.brake ?? 0)) * 0.05 -
+        Math.max(-0.16, Math.min(0.16, r.rvy * 0.012));
+      const targetRoll = -(t.steer ?? 0) * 0.18;
       r.pitch += (targetPitch - r.pitch) * tilt;
       r.roll += (targetRoll - r.roll) * tilt;
       if (inn) {
@@ -431,7 +455,7 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
 // ------------------------------------------------- instanced cars (big fleets)
 // For hundreds–thousands of cars, one InstancedMesh (2 draw calls) replaces the
 // per-car detailed groups. Same velocity-extrapolation smoothing as Cars.
-interface ISt { x: number; y: number; z: number; vx: number; vy: number; theta: number; init: boolean }
+interface ISt { x: number; y: number; z: number; vx: number; vy: number; theta: number; ry: number; rvy: number; init: boolean }
 
 function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20 }: Omit<Props, "chase">) {
   const bodyRef = useRef<THREE.InstancedMesh>(null);
@@ -466,7 +490,7 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
     const cars = tele.cars;
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
-      state.current = cars.map((c) => ({ x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, init: true }));
+      state.current = cars.map((c) => ({ x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, ry: (c.z ?? 0) + CAR_LIFT, rvy: 0, init: true }));
     }
     const corr = 1 - Math.exp(-7 * delta);
     const n = Math.min(numCars, cars.length);
@@ -479,14 +503,20 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
       const tvy = t.v * Math.sin(t.theta);
       const tz = t.z ?? 0;
       if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 5) {
-        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta; r.init = false;
+        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta;
+        r.ry = tz + CAR_LIFT; r.rvy = 0; r.init = false;
       } else {
         r.x += r.vx * delta; r.y += r.vy * delta;
         r.x += (t.x - r.x) * corr; r.y += (t.y - r.y) * corr; r.z += (tz - r.z) * corr;
         r.vx += (tvx - r.vx) * corr; r.vy += (tvy - r.vy) * corr;
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
-      dummy.position.set(r.x, r.z + CAR_LIFT, r.y);
+      const groundY = r.z + CAR_LIFT;
+      if (r.ry > groundY + 0.05) r.rvy -= 42 * delta;
+      else { r.rvy += (groundY - r.ry) * 130 * delta; r.rvy *= Math.exp(-9 * delta); }
+      r.ry += r.rvy * delta;
+      if (r.ry < groundY) { r.ry = groundY; if (r.rvy < 0) r.rvy = -r.rvy * 0.18; }
+      dummy.position.set(r.x, r.ry, r.y);
       dummy.rotation.set(0, -r.theta, 0);
       dummy.updateMatrix();
       bm.setMatrixAt(i, dummy.matrix);
@@ -535,17 +565,34 @@ function CameraRig({
   followId: number | null;
 }) {
   const { camera } = useThree();
-  const tmp = useRef(new THREE.Vector3());
-  useFrame(() => {
-    if (followId === null) return;
+  const camPos = useRef(new THREE.Vector3());
+  const lookAt = useRef(new THREE.Vector3());
+  const desired = useRef(new THREE.Vector3());
+  const target = useRef(new THREE.Vector3());
+  const inited = useRef(false);
+  useFrame((_, rawDelta) => {
+    if (followId === null) {
+      inited.current = false;
+      return;
+    }
     const c = telemetryRef.current?.cars[followId];
     if (!c) return;
+    const dt = Math.min(rawDelta, 0.05);
     const fx = Math.cos(c.theta);
     const fz = Math.sin(c.theta);
-    const h = c.z ?? 0;
-    tmp.current.set(c.x - fx * 42, h + 22, c.y - fz * 42);
-    camera.position.lerp(tmp.current, 0.09);
-    camera.lookAt(c.x, h + 3, c.y);
+    const h = c.z ?? 0; // follow the smoothed ground height, not the bouncing car
+    desired.current.set(c.x - fx * 30, h + 13, c.y - fz * 30);
+    target.current.set(c.x + fx * 9, h + 2.5, c.y + fz * 9); // look slightly ahead
+    if (!inited.current) {
+      camPos.current.copy(desired.current);
+      lookAt.current.copy(target.current);
+      inited.current = true;
+    }
+    // frame-rate-independent critical damping — smooth, no terrain jitter
+    camPos.current.lerp(desired.current, 1 - Math.exp(-3.5 * dt));
+    lookAt.current.lerp(target.current, 1 - Math.exp(-6 * dt));
+    camera.position.copy(camPos.current);
+    camera.lookAt(lookAt.current);
   });
   return null;
 }
@@ -602,7 +649,7 @@ function SensorRays({
 }
 
 // ---------------------------------------------------------------- scene root
-export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, numCars = 20 }: Props) {
+export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, numCars = 20, active = true, showRacingLine = false }: Props) {
   const { minX, maxX, minY, maxY } = track.bounds;
   const cx = (minX + maxX) / 2;
   const cz = (minY + maxY) / 2;
@@ -611,6 +658,15 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
   const followId = chase ? selectedId : null;
   const shadow = extent * 0.62;
   const sun: [number, number, number] = [cx - extent * 0.3, extent * 0.55, cz - extent * 0.22];
+
+  // ideal racing line (render-only; the cars never observe it)
+  const racePts = useMemo<[number, number, number][]>(() => {
+    const rl = racingLine(track.centerline as Pt[], track.halfWidth);
+    const elev = track.elevation;
+    const pts = rl.map(([x, y], i) => [x, elev[i] + TRACK_LIFT + 0.14, y] as [number, number, number]);
+    pts.push(pts[0]);
+    return pts;
+  }, [track]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -637,6 +693,7 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
       <Canvas
         shadows
         dpr={[1, 1.75]}
+        frameloop={active ? "always" : "demand"}
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         camera={{ position: [cx, dist, cz + dist * 0.85], fov: 50, near: 1, far: extent * 8 }}
         onPointerMissed={() => onSelect(null)}
@@ -661,6 +718,7 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
 
         <Terrain track={track} />
         <TrackMesh track={track} />
+        {showRacingLine && <Line points={racePts} color="#ff3b30" lineWidth={3} />}
         {numCars > 60 ? (
           <InstancedCars track={track} telemetryRef={telemetryRef} selectedId={selectedId} onSelect={onSelect} numCars={numCars} />
         ) : (
@@ -671,10 +729,13 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
         <CameraRig telemetryRef={telemetryRef} followId={followId} />
         <OrbitControls
           enabled={followId === null}
+          makeDefault
           target={[cx, 0, cz]}
-          maxPolarAngle={Math.PI / 2.15}
-          minDistance={20}
-          maxDistance={extent * 2.5}
+          enablePan
+          screenSpacePanning={false}
+          maxPolarAngle={Math.PI * 0.495}
+          minDistance={8}
+          maxDistance={extent * 4}
           enableDamping
           dampingFactor={0.08}
         />

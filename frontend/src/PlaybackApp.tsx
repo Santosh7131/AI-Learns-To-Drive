@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Flag, Boxes, Gauge, Play, Trophy, Waypoints, Cpu, ArrowDown, FlaskConical } from "lucide-react";
+import { Flag, Gauge, Boxes, Play, Trophy, Waypoints, Cpu, ArrowDown, FlaskConical } from "lucide-react";
 import { Arena, type HudStatSpec } from "@/components/Arena";
 import { TopNav, REPO_URL } from "@/components/TopNav";
 import { PlaybackControls } from "@/components/PlaybackControls";
@@ -7,10 +7,9 @@ import {
   LocalSimSource,
   benchmarkSystem,
   loadSimTrack,
-  hasWebGPU,
   type SystemScore,
 } from "@/sim/source";
-import { presetById, presetsFor, type PresetId } from "@/sim/presets";
+import { presetFleet, CUSTOM_DEFAULT, STEPS_PER_SEC, type PresetId } from "@/sim/presets";
 import type { PlaybackMetrics, SimTrack } from "@/sim/types";
 import type { Telemetry } from "@/lib/api";
 
@@ -24,22 +23,23 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const [pb, setPb] = useState<PlaybackMetrics | null>(null);
   const [ready, setReady] = useState<{ device: string; modelStep: number; bestReturn: number } | null>(null);
   const [score, setScore] = useState<SystemScore | null>(null);
-  const [preset, setPreset] = useState<PresetId>("medium");
-  const [fleet, setFleet] = useState(15);
-  const [gpu, setGpu] = useState<boolean>(() => hasWebGPU());
+  const [preset, setPreset] = useState<PresetId>("p10");
+  const [customFleet, setCustomFleet] = useState(CUSTOM_DEFAULT);
   const [running, setRunning] = useState(false);
   const [serverFallback, setServerFallback] = useState(false);
+  const [fs, setFs] = useState(false);
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
+  const demoRef = useRef<HTMLDivElement>(null);
+
+  const fleet = presetFleet(preset, customFleet);
 
   useEffect(() => {
     const s = benchmarkSystem();
     setScore(s);
-    const gpuGuess = hasWebGPU();
     const p0 = s.suggestedPreset;
-    const cfg0 = presetById(p0, gpuGuess);
     setPreset(p0);
-    setFleet(cfg0.fleet);
+    const f0 = presetFleet(p0, CUSTOM_DEFAULT);
 
     let src: LocalSimSource | null = null;
     let alive = true;
@@ -49,23 +49,13 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
         setTrack(td);
         src = new LocalSimSource({
           trackData: td,
-          numEnvs: cfg0.fleet,
-          stepsPerSec: cfg0.stepsPerSec,
+          numEnvs: f0,
+          stepsPerSec: STEPS_PER_SEC,
           onFrame: (t) => {
             telemetryRef.current = t;
           },
           onMetrics: setPb,
-          onReady: (info) => {
-            setReady(info);
-            const actual = /gpu/i.test(info.device);
-            if (actual !== gpuGuess) {
-              setGpu(actual);
-              const cfg = presetById(p0, actual);
-              setFleet(cfg.fleet);
-              src?.setFleet(cfg.fleet);
-              src?.setRate(cfg.stepsPerSec);
-            }
-          },
+          onReady: setReady,
           onError: (msg) => {
             console.error("[sim] worker error:", msg);
             if (hasBackend) {
@@ -86,14 +76,21 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const changePreset = (id: PresetId) => {
-    const cfg = presetById(id, gpu);
-    setPreset(id);
-    setFleet(cfg.fleet);
-    srcRef.current?.setFleet(cfg.fleet);
-    srcRef.current?.setRate(cfg.stepsPerSec);
-  };
+  // track native fullscreen state
+  useEffect(() => {
+    const onChange = () => setFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
+  const changePreset = (id: PresetId) => {
+    setPreset(id);
+    srcRef.current?.setFleet(presetFleet(id, customFleet));
+  };
+  const changeCustom = (n: number) => {
+    setCustomFleet(n);
+    if (preset === "custom") srcRef.current?.setFleet(n);
+  };
   const toggleRun = () => {
     setRunning((r) => {
       const next = !r;
@@ -102,8 +99,15 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       return next;
     });
   };
+  const reset = () => srcRef.current?.reset();
+  const toggleFullscreen = () => {
+    const el = demoRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) el.requestFullscreen?.().catch(() => setFs(true));
+    else document.exitFullscreen?.();
+  };
 
-  const device = ready?.device ?? (gpu ? "Browser · GPU" : "Browser · CPU");
+  const device = ready?.device ?? "Browser";
   const stepsPerSec = pb?.stepsPerSec ?? 0;
   const modelStep = ready?.modelStep ?? pb?.modelStep ?? 0;
 
@@ -112,6 +116,24 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     { icon: <Gauge className="h-3 w-3" />, label: "Steps/s", value: stepsPerSec.toFixed(0), accent: true },
     { icon: <Boxes className="h-3 w-3" />, label: "Cars", value: String(fleet) },
   ];
+
+  const controls = (
+    <PlaybackControls
+      preset={preset}
+      onPreset={changePreset}
+      customFleet={customFleet}
+      onCustomFleet={changeCustom}
+      fleet={fleet}
+      running={running}
+      onToggleRun={toggleRun}
+      onReset={reset}
+      score={score}
+      device={device}
+      stepsPerSec={stepsPerSec}
+      modelStep={modelStep}
+      serverFallback={serverFallback}
+    />
+  );
 
   return (
     <div id="top" className="min-h-full">
@@ -147,29 +169,36 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             hardware.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <a
-              href="#demo"
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-            >
+            <a href="#demo" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
               <Play className="h-4 w-4" /> Watch it drive
             </a>
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent"
-            >
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent">
               How it works <ArrowDown className="h-4 w-4" />
             </a>
           </div>
         </section>
 
-        {/* live demo */}
+        {/* live demo (this subtree is what goes fullscreen) */}
         <section id="demo" className="scroll-mt-20 pb-16">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="h-[58vh] min-h-[420px]">
+          <div
+            ref={demoRef}
+            className={
+              fs
+                ? "grid h-screen grid-cols-1 gap-4 bg-background p-4 lg:grid-cols-[minmax(0,1fr)_340px]"
+                : "grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]"
+            }
+          >
+            <div className={fs ? "min-h-0" : "h-[58vh] min-h-[420px]"}>
               {track ? (
-                <Arena track={track} telemetryRef={telemetryRef} numCars={fleet} hud={hud} />
+                <Arena
+                  track={track}
+                  telemetryRef={telemetryRef}
+                  numCars={fleet}
+                  hud={hud}
+                  active={running}
+                  fullscreen={fs}
+                  onToggleFullscreen={toggleFullscreen}
+                />
               ) : (
                 <div className="flex h-full items-center justify-center rounded-xl border bg-[#0a0e16] text-sm text-white/60">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
@@ -177,23 +206,15 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
                 </div>
               )}
             </div>
-            <PlaybackControls
-              presets={presetsFor(gpu)}
-              preset={preset}
-              onPreset={changePreset}
-              running={running}
-              onToggleRun={toggleRun}
-              score={score}
-              device={device}
-              stepsPerSec={stepsPerSec}
-              modelStep={modelStep}
-              serverFallback={serverFallback}
-            />
+            <div className={fs ? "scroll-slim overflow-y-auto" : ""}>{controls}</div>
           </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Every car runs the same policy. Grey cars have gone off-track and are resetting. Click any car to
-            inspect the neural network's live steering / throttle / brake outputs and its lidar view.
-          </p>
+          {!fs && (
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              Every car runs the same policy. Grey cars have gone off-track and are resetting. Click any car to
+              inspect the neural network's live steering / throttle / brake outputs and its lidar view. Drag to
+              orbit, or use the racing-line and fullscreen controls on the scene.
+            </p>
+          )}
         </section>
 
         {/* how it works */}
@@ -201,26 +222,12 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
           <h2 className="text-2xl font-bold tracking-tight">How it works</h2>
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
             {[
-              {
-                icon: <Trophy className="h-5 w-5" />,
-                title: "Learns by trial and error",
-                body: "With PPO reinforcement learning, cars are rewarded for making progress and penalised for leaving the track. Good driving emerges from millions of attempts — none of it is scripted.",
-              },
-              {
-                icon: <Waypoints className="h-5 w-5" />,
-                title: "A Transformer at the wheel",
-                body: "The policy attends over a short history of lidar rays and motion to choose continuous steering, throttle and brake — the same architecture behind modern language models.",
-              },
-              {
-                icon: <Cpu className="h-5 w-5" />,
-                title: "Runs on your hardware",
-                body: "The trained network was ported to run in the browser — batched on your GPU via WebGPU, or on the CPU — and validated to match the original PyTorch model to five decimals.",
-              },
+              { icon: <Trophy className="h-5 w-5" />, title: "Learns by trial and error", body: "With PPO reinforcement learning, cars are rewarded for making progress and penalised for leaving the track. Good driving emerges from millions of attempts — none of it is scripted." },
+              { icon: <Waypoints className="h-5 w-5" />, title: "A Transformer at the wheel", body: "The policy attends over a short history of lidar rays and motion to choose continuous steering, throttle and brake — the same architecture behind modern language models." },
+              { icon: <Cpu className="h-5 w-5" />, title: "Runs on your hardware", body: "The trained network was ported to run in the browser — batched on your GPU via WebGPU, or on the CPU — and validated to match the original PyTorch model to five decimals." },
             ].map((c) => (
               <div key={c.title} className="rounded-xl border bg-card p-5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-secondary/50 text-brand">
-                  {c.icon}
-                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-secondary/50 text-brand">{c.icon}</div>
                 <h3 className="mt-4 text-base font-semibold">{c.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{c.body}</p>
               </div>
@@ -234,9 +241,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
           <div>AI Learns To Drive — a reinforcement-learning project.</div>
           <div className="flex items-center gap-4">
             <span className="text-xs">React · Three.js · PyTorch · WebGPU</span>
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">
-              GitHub
-            </a>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">GitHub</a>
           </div>
         </div>
       </footer>
