@@ -3,41 +3,70 @@
 @tailwind utilities;
 
 /* ============================================================================
-   Reinforcement Car — "Modern Dark" cinematic dashboard design system
-   Deep slate base (never pure black), glassmorphism panels, green "go" accent
-   with subtle glow, cyan for live data. Single dark theme.
+   AI Learns To Drive — minimalist design system
+   Near-monochrome surfaces, hairline borders, one restrained accent (blue),
+   generous whitespace, Inter for UI + JetBrains Mono for telemetry. Light by
+   default with a full dark mode. No glassmorphism, no decorative gradients.
    ========================================================================== */
 @layer base {
   :root {
-    --background: 222 47% 5%;
-    --foreground: 210 40% 96%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
 
-    --card: 220 33% 10%;
-    --card-foreground: 210 40% 96%;
-    --popover: 220 38% 8%;
-    --popover-foreground: 210 40% 96%;
-
-    --primary: 152 66% 45%;          /* go / train green */
-    --primary-foreground: 155 80% 6%;
-
-    --secondary: 217 28% 16%;
-    --secondary-foreground: 210 40% 96%;
-
-    --muted: 217 24% 14%;
-    --muted-foreground: 214 18% 62%;
-
-    --accent: 217 28% 18%;           /* subtle hover surface */
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 72% 56%;
+    --primary: 0 0% 9%;               /* monochrome CTAs (black in light) */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.5%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 0 0% 95%;               /* subtle hover surface */
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 98%;
 
-    --data: 190 92% 55%;             /* cyan — sensors / live data */
+    --border: 0 0% 90%;
+    --input: 0 0% 89%;
+    --ring: 0 0% 9%;
 
-    --border: 215 26% 20%;
-    --input: 215 26% 19%;
-    --ring: 152 66% 45%;
-    --radius: 0.85rem;
+    --brand: 221 83% 53%;             /* the single accent — links/active/data */
+    --brand-foreground: 0 0% 100%;
+    --data: 221 83% 53%;              /* data-viz uses the accent */
+    --live: 142 71% 40%;              /* live / positive signal (used sparingly) */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 6.5%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 0 0% 96%;              /* inverts: near-white CTAs */
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 11%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 14%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 83%;
+
+    --brand: 217 91% 62%;
+    --brand-foreground: 0 0% 100%;
+    --data: 217 91% 62%;
+    --live: 142 69% 48%;
   }
 }
 
@@ -50,83 +79,74 @@
   #root {
     height: 100%;
   }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1, "ss01" 1;
+    font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* ambient depth: soft green + cyan glows bleeding from the corners */
-    background-image:
-      radial-gradient(60rem 60rem at 12% -10%, hsl(152 66% 45% / 0.10), transparent 60%),
-      radial-gradient(50rem 50rem at 100% 0%, hsl(190 92% 55% / 0.08), transparent 55%),
-      radial-gradient(70rem 40rem at 50% 120%, hsl(222 60% 20% / 0.25), transparent 60%);
-    background-attachment: fixed;
+  }
+  ::selection {
+    background: hsl(var(--brand) / 0.18);
   }
 }
 
 @layer components {
-  /* frosted-glass panel */
-  .glass {
-    background: hsl(var(--card) / 0.62);
-    backdrop-filter: blur(14px) saturate(150%);
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
-    border: 1px solid hsl(var(--border) / 0.7);
-    box-shadow:
-      inset 0 1px 0 0 hsl(0 0% 100% / 0.05),
-      0 16px 40px -20px hsl(222 70% 2% / 0.8);
-  }
-  /* lighter glass for floating HUD chips / overlays over the 3D scene */
-  .glass-hud {
-    background: hsl(222 45% 6% / 0.6);
-    backdrop-filter: blur(10px) saturate(140%);
-    -webkit-backdrop-filter: blur(10px) saturate(140%);
-    border: 1px solid hsl(0 0% 100% / 0.08);
-    box-shadow: 0 8px 24px -14px hsl(222 70% 2% / 0.7);
-  }
-  /* green glow ring for "live"/active elements */
-  .glow-primary {
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.35), 0 0 22px -4px hsl(var(--primary) / 0.55);
-  }
   .hairline {
-    border-color: hsl(var(--border) / 0.6);
+    border: 1px solid hsl(var(--border));
   }
-  /* thin, tasteful scrollbars inside panels */
+  /* tabular monospace for all telemetry/numbers */
+  .num {
+    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
   .scroll-slim {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
   .scroll-slim::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
   }
   .scroll-slim::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
     border-radius: 9999px;
   }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 @layer utilities {
   .animate-rise {
-    animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .animate-livepulse {
+    animation: livepulse 2s ease-in-out infinite;
   }
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 @keyframes livepulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5); }
-  50% { opacity: 0.75; box-shadow: 0 0 0 4px hsl(var(--primary) / 0); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
-/* respect reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.001ms !important;
