@@ -32,6 +32,7 @@ const TWO_PI = 2 * Math.PI;
 const posmod = (a: number, n: number) => ((a % n) + n) % n;
 const wrap = (a: number) => posmod(a + Math.PI, TWO_PI) - Math.PI;
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+const STUN_STEPS = 12; // ~1.2 sim-seconds frozen after a crash (effects mode)
 
 /** mulberry32 — small seeded PRNG so spawn randomization is reproducible */
 function mulberry32(seed: number) {
@@ -78,13 +79,16 @@ export class CarEnv {
   lastAction: Float32Array; // [n * 3]
   lastReward: Float32Array; // [n]
   done: Uint8Array; // [n]
+  stun: Int32Array; // [n] steps frozen after a crash (effects mode only)
+  readonly effects: boolean; // client-side collisions + wall stop-and-recover
   totalLaps = 0;
 
   private rng: () => number;
   private obsBuf: Float32Array;
 
-  constructor(track: TrackData, cfg: PhysicsConfig, numEnvs: number, seed = 0) {
+  constructor(track: TrackData, cfg: PhysicsConfig, numEnvs: number, seed = 0, effects = false) {
     this.cfg = cfg;
+    this.effects = effects;
     this.n = numEnvs;
     this.M = track.centerline.length;
     this.obsDim = cfg.obsDim;
@@ -127,6 +131,7 @@ export class CarEnv {
     this.lastAction = new Float32Array(n * 3);
     this.lastReward = new Float32Array(n);
     this.done = new Uint8Array(n);
+    this.stun = new Int32Array(n);
     this.obsBuf = new Float32Array(n * this.obsDim);
     this.rng = mulberry32(seed || 1);
   }
@@ -268,6 +273,17 @@ export class CarEnv {
     const c = this.cfg;
     const finishedIdx: number[] = [];
     for (let i = 0; i < this.n; i++) {
+      // effects mode: a crashed car freezes ~1s at the wall, then rejoins the track
+      if (this.effects && this.stun[i] > 0) {
+        this.v[i] = 0;
+        this.offtrack[i] = 1;
+        this.lastAction[i * 3] = 0; this.lastAction[i * 3 + 1] = 0; this.lastAction[i * 3 + 2] = 0;
+        this.lastReward[i] = 0;
+        this.done[i] = 0;
+        if (--this.stun[i] === 0) this.recoverToTrack(i);
+        continue;
+      }
+
       const steer = clamp(actions[i * 3], -1, 1);
       const accel = clamp(actions[i * 3 + 1], 0, 1);
       const brake = clamp(actions[i * 3 + 2], 0, 1);
@@ -313,11 +329,23 @@ export class CarEnv {
 
       this.epLen[i] += 1;
       this.epReturn[i] += reward;
-      const truncated = this.epLen[i] >= c.maxSteps;
-      const doneCar = off || truncated;
-      this.done[i] = doneCar ? 1 : 0;
-      if (doneCar) finishedIdx.push(i);
+
+      if (this.effects) {
+        // playground: crash → stop at the wall (no teleport), no time-limit resets
+        this.done[i] = 0;
+        if (off) {
+          this.stun[i] = STUN_STEPS;
+          this.v[i] = 0;
+        }
+      } else {
+        const truncated = this.epLen[i] >= c.maxSteps;
+        const doneCar = off || truncated;
+        this.done[i] = doneCar ? 1 : 0;
+        if (doneCar) finishedIdx.push(i);
+      }
     }
+
+    if (this.effects) this.resolveCollisions();
 
     let obs = this.observe();
     if (finishedIdx.length) {
@@ -325,6 +353,44 @@ export class CarEnv {
       obs = this.observe();
     }
     return obs;
+  }
+
+  /** snap a recovered car back onto the racing surface, facing forward */
+  private recoverToTrack(i: number) {
+    const idx = posmod(Math.round(this.progIdx[i]), this.M);
+    this.x[i] = this.Px[idx];
+    this.y[i] = this.Py[idx];
+    this.theta[i] = this.tanA[idx];
+    this.v[i] = 0;
+    this.offtrack[i] = 0;
+  }
+
+  /** cheap pairwise car-car collision: separate overlapping cars + bleed speed */
+  private resolveCollisions() {
+    const R = 4.4;
+    const R2 = R * R;
+    for (let i = 0; i < this.n; i++) {
+      if (this.stun[i] > 0) continue;
+      for (let j = i + 1; j < this.n; j++) {
+        const dx = this.x[j] - this.x[i];
+        const dy = this.y[j] - this.y[i];
+        const d2 = dx * dx + dy * dy;
+        if (d2 < R2 && d2 > 1e-6) {
+          const d = Math.sqrt(d2);
+          const push = (R - d) * 0.5;
+          const ux = dx / d;
+          const uy = dy / d;
+          this.x[i] -= ux * push;
+          this.y[i] -= uy * push;
+          this.v[i] *= 0.55;
+          if (this.stun[j] === 0) {
+            this.x[j] += ux * push;
+            this.y[j] += uy * push;
+            this.v[j] *= 0.55;
+          }
+        }
+      }
+    }
   }
 
   // -------------------------------------------------------- render helpers

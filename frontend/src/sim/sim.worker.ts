@@ -23,6 +23,12 @@ let running = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let stepCount = 0;
 
+// per-car "driver style" so cars aren't identical copies of the shared policy:
+// a persistent throttle scale + a smoothed steering wander give each car its own
+// lines and corner speeds (purely a playback flavour, not independent learning).
+let accelScale: Float32Array | null = null;
+let steerWander: Float32Array | null = null;
+
 // fps measurement (rolling)
 let fpsWindow: number[] = [];
 let lastMetrics = 0;
@@ -37,6 +43,9 @@ function buildWindow() {
     for (let d = 0; d < O; d++) window_[i * K * O + (K - 1) * O + d] = obs[i * O + d];
   }
   actions = new Float32Array(N * 3);
+  accelScale = new Float32Array(N);
+  steerWander = new Float32Array(N);
+  for (let i = 0; i < N; i++) accelScale[i] = 0.88 + Math.random() * 0.24; // persistent per-car throttle bias
   stepCount = 0;
 }
 
@@ -111,6 +120,15 @@ async function doStep() {
     }
   }
 
+  // 1b) apply per-car driver style (varied lines + corner speeds)
+  if (accelScale && steerWander) {
+    for (let i = 0; i < N; i++) {
+      steerWander[i] = steerWander[i] * 0.9 + (Math.random() - 0.5) * 0.05;
+      a[i * 3] = Math.max(-1, Math.min(1, a[i * 3] + steerWander[i]));
+      a[i * 3 + 1] = Math.max(0, Math.min(1, a[i * 3 + 1] * accelScale[i]));
+    }
+  }
+
   // 2) advance the world
   const obs = e.step(a);
   stepCount++;
@@ -163,7 +181,7 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       policy = new Policy(pf);
       K = policy.arch.window;
       O = policy.arch.obsDim;
-      env = new CarEnv(track, policy.physics as never, N, msg.seed);
+      env = new CarEnv(track, policy.physics as never, N, msg.seed, true); // effects: collisions + wall stop-and-recover
       buildWindow();
       // prefer the GPU (batched policy) when WebGPU is available in the worker
       try {
@@ -181,7 +199,7 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       if (msg.stepsPerSec != null) stepsPerSec = msg.stepsPerSec;
       if (msg.numEnvs != null && msg.numEnvs !== N && env && policy && track) {
         N = msg.numEnvs;
-        env = new CarEnv(track, policy.physics as never, N, 1);
+        env = new CarEnv(track, policy.physics as never, N, 1, true);
         buildWindow();
       }
     } else if (msg.type === "reset") {
