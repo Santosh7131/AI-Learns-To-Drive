@@ -14,6 +14,8 @@ interface Props {
   running: boolean;
   onToggleRun: () => void;
   onReset: () => void;
+  speed: number;
+  onSpeed: (n: number) => void;
   score: SystemScore | null;
   device: string;
   stepsPerSec: number;
@@ -34,6 +36,8 @@ export function PlaybackControls({
   running,
   onToggleRun,
   onReset,
+  speed,
+  onSpeed,
   score,
   device,
   stepsPerSec,
@@ -109,6 +113,16 @@ export function PlaybackControls({
           )}
         </div>
 
+        {/* simulation speed */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Sim speed</Label>
+            <span className="num text-sm font-semibold">{speed.toFixed(2).replace(/\.00$/, "")}×</span>
+          </div>
+          <Slider min={0.25} max={8} step={0.25} value={[speed]} onValueChange={([v]) => onSpeed(v)} />
+          <p className="text-[11px] leading-snug text-muted-foreground">Fast-forward the simulation to skip ahead, or slow it down to study a corner.</p>
+        </div>
+
         {/* transport */}
         <div className="grid grid-cols-2 gap-2">
           <Button onClick={onToggleRun} variant={running ? "outline" : "default"}>
@@ -122,7 +136,7 @@ export function PlaybackControls({
         {/* live readouts */}
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border bg-secondary/40 p-2.5">
-            <Label>Sim speed</Label>
+            <Label>Rate</Label>
             <div className="num mt-0.5 text-sm font-semibold">
               {stepsPerSec.toFixed(0)}<span className="ml-1 text-[10px] font-normal text-muted-foreground">steps/s</span>
             </div>

@@ -28,6 +28,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const [running, setRunning] = useState(false);
   const [serverFallback, setServerFallback] = useState(false);
   const [fs, setFs] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
   const demoRef = useRef<HTMLDivElement>(null);
@@ -100,6 +101,10 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     });
   };
   const reset = () => srcRef.current?.reset();
+  const changeSpeed = (n: number) => {
+    setSpeed(n);
+    srcRef.current?.setRate(STEPS_PER_SEC * n);
+  };
   const toggleFullscreen = () => {
     const el = demoRef.current;
     if (!el) return;
@@ -127,6 +132,8 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       running={running}
       onToggleRun={toggleRun}
       onReset={reset}
+      speed={speed}
+      onSpeed={changeSpeed}
       score={score}
       device={device}
       stepsPerSec={stepsPerSec}
@@ -169,9 +176,15 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             hardware.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <a href="#demo" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+            <button
+              onClick={() => {
+                document.getElementById("demo")?.scrollIntoView({ behavior: "smooth" });
+                toggleFullscreen();
+              }}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
               <Play className="h-4 w-4" /> Watch it drive
-            </a>
+            </button>
             <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent">
               How it works <ArrowDown className="h-4 w-4" />
             </a>
