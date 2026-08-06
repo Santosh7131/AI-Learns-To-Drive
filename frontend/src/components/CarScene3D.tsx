@@ -26,7 +26,7 @@ interface Props {
 }
 
 const TRACK_LIFT = 0.45; // track surface above terrain
-const CAR_LIFT = 0.5; // car sits on the track surface
+const CAR_LIFT = 0.85; // car sits on (never under) the track surface
 
 function carColor(id: number, total = 20) {
   return new THREE.Color(carColorCss(id, total));
@@ -401,19 +401,20 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
 
-      // vertical suspension spring: cars crest/launch on hills and settle
+      // vertical suspension spring: subtle travel, small hops on real crests
       const groundY = r.z + CAR_LIFT;
-      if (r.ry > groundY + 0.05) {
-        r.rvy -= 42 * delta; // airborne — gravity
+      if (r.ry > groundY + 0.2) {
+        r.rvy -= 30 * delta; // airborne — gentle gravity
       } else {
-        r.rvy += (groundY - r.ry) * 130 * delta; // grounded — stiff spring to the surface
-        r.rvy *= Math.exp(-9 * delta);
+        r.rvy += (groundY - r.ry) * 80 * delta; // grounded — soft suspension
+        r.rvy *= Math.exp(-13 * delta);
       }
       r.ry += r.rvy * delta;
       if (r.ry < groundY) {
         r.ry = groundY;
-        if (r.rvy < 0) r.rvy = -r.rvy * 0.18; // land with a small bounce
+        if (r.rvy < 0) r.rvy = -r.rvy * 0.12;
       }
+      if (r.ry > groundY + 2.5) r.ry = groundY + 2.5; // cap air — stays car-like
 
       o.position.set(r.x, r.ry, r.y);
       o.rotation.y = -r.theta;
@@ -444,7 +445,9 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
               onSelect(i === selectedId ? null : i);
             }}
           >
-            <CarMesh color={carColor(i, numCars)} selected={i === selectedId} />
+            <group scale={1.3}>
+              <CarMesh color={carColor(i, numCars)} selected={i === selectedId} />
+            </group>
           </group>
         </group>
       ))}
@@ -465,10 +468,10 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const grey = useMemo(() => new THREE.Color("#5b606b"), []);
   // two-tone car silhouette: a rounded body + a darker cabin baked slightly up/back
-  const bodyGeo = useMemo(() => new RoundedBoxGeometry(6.6, 1.0, 2.9, 3, 0.28), []);
+  const bodyGeo = useMemo(() => new RoundedBoxGeometry(8.0, 1.2, 3.4, 3, 0.34), []);
   const cabinGeo = useMemo(() => {
-    const g = new RoundedBoxGeometry(3.1, 0.8, 2.15, 3, 0.25);
-    g.translate(-0.35, 0.85, 0);
+    const g = new RoundedBoxGeometry(3.7, 0.95, 2.6, 3, 0.3);
+    g.translate(-0.4, 1.0, 0);
     return g;
   }, []);
   useEffect(() => () => { bodyGeo.dispose(); cabinGeo.dispose(); }, [bodyGeo, cabinGeo]);
@@ -512,10 +515,11 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
       const groundY = r.z + CAR_LIFT;
-      if (r.ry > groundY + 0.05) r.rvy -= 42 * delta;
-      else { r.rvy += (groundY - r.ry) * 130 * delta; r.rvy *= Math.exp(-9 * delta); }
+      if (r.ry > groundY + 0.2) r.rvy -= 30 * delta;
+      else { r.rvy += (groundY - r.ry) * 80 * delta; r.rvy *= Math.exp(-13 * delta); }
       r.ry += r.rvy * delta;
-      if (r.ry < groundY) { r.ry = groundY; if (r.rvy < 0) r.rvy = -r.rvy * 0.18; }
+      if (r.ry < groundY) { r.ry = groundY; if (r.rvy < 0) r.rvy = -r.rvy * 0.12; }
+      if (r.ry > groundY + 2.5) r.ry = groundY + 2.5;
       dummy.position.set(r.x, r.ry, r.y);
       dummy.rotation.set(0, -r.theta, 0);
       dummy.updateMatrix();
