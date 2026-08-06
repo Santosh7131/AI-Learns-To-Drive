@@ -1,30 +1,33 @@
-# Reinforcement Car 🏎️
+# AI Learns To Drive 🏎️
 
-A full-stack app that trains a **Transformer-based reinforcement-learning policy** to
-drive a car around a race track. The policy outputs three controls — **steering,
-acceleration, brake** — and learns via **PPO** across **20 cars training in parallel**,
-all visualized live in the browser. You can save / load / delete model checkpoints
-from the UI.
+An AI that teaches itself to drive. A **Transformer policy** trained with **reinforcement
+learning (PPO)** discovers how to steer, accelerate and brake around a race track — with no
+hand-coded rules — and the exact trained network then runs **live in the browser**, batched on
+the visitor's **GPU via WebGPU** (or on the CPU), rendered in 3D.
+
+**Two ways to run it:**
+
+- **Playground** *(the deployed site)* — a **static** page that loads the pre-trained policy and
+  simulates the whole fleet in the visitor's own browser. No backend, no GPU bill. The physics +
+  Transformer were ported to TypeScript/WGSL and **validated to match the Python original to ~1e-5**
+  (`frontend/scripts/parity.ts`).
+- **Training console** *(local)* — the Flask + PyTorch backend that actually trains the policy on
+  your GPU and streams live telemetry to the UI.
 
 ```
-reinforcement_car/
-├── backend/            Flask + PyTorch (the RL brain)
+├── backend/            Flask + PyTorch (trains the policy)
 │   ├── app.py          REST + Server-Sent-Events endpoints
-│   ├── rl/
-│   │   ├── environment.py   Vectorized race-track physics + terrain (20 cars)
-│   │   ├── model.py         Transformer actor-critic policy
-│   │   ├── trainer.py       PPO trainer + per-track checkpoints (background thread)
-│   │   ├── tracks.py        Track registry (default + real F1 circuits)
-│   │   └── track_data/      Real circuit geometry (JSON, committed)
-│   ├── scripts/fetch_tracks.py   Downloads/derives the F1 circuits
-│   └── checkpoints/    Saved .pt models + history.json (generated)
-└── frontend/           Vite + React + TypeScript + shadcn/ui + Three.js
+│   ├── serve.py        production entrypoint (waitress)
+│   ├── export_web.py   export a checkpoint → static assets for the playground
+│   └── rl/             environment.py · model.py (Transformer) · trainer.py (PPO) · tracks.py
+└── frontend/           Vite + React + TypeScript + Tailwind + Three.js
+    ├── public/web/      exported policy.json + track geometry (committed; drives the playground)
     └── src/
-        ├── App.tsx
-        ├── lib/         api.ts, trackGeometry.ts, carViz.ts, utils.ts
-        ├── components/  CarCanvas (2D), CarScene3D (3D), CarInspector,
-        │                ControlPanel, MetricsPanel, CheckpointPanel, ErrorBoundary
-        └── components/ui/  shadcn primitives
+        ├── App.tsx      routes: training console (backend present) vs playground
+        ├── PlaybackApp.tsx / LiveApp.tsx
+        ├── sim/          env.ts · policy.ts · gpuPolicy.ts (WGSL) · sim.worker.ts · source.ts
+        ├── components/   TopNav · Arena · CarScene3D (3D) · CarCanvas (2D) · panels
+        └── lib/          api.ts · trackGeometry.ts · carViz.ts · theme.ts
 ```
 
 ## How it works

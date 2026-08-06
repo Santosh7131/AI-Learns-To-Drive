@@ -1,12 +1,13 @@
 {
-  "name": "reinforcement-car-frontend",
+  "name": "ai-learns-to-drive",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "parity": "tsx scripts/parity.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.1",
@@ -35,6 +36,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.9",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
   }
