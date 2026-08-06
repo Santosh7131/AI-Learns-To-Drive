@@ -28,7 +28,12 @@ export async function backendAvailable(timeoutMs = 1500): Promise<boolean> {
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     const res = await fetch(`${API_BASE}/status`, { signal: ctrl.signal });
     clearTimeout(t);
-    return res.ok;
+    if (!res.ok) return false;
+    // A static host with an SPA rewrite returns index.html (200) for /api/*;
+    // require a genuine JSON status so we don't mistake that for a backend.
+    if (!(res.headers.get("content-type") || "").includes("application/json")) return false;
+    const j = await res.json().catch(() => null);
+    return !!j && (typeof j.status === "string" || typeof j.device === "string");
   } catch {
     return false;
   }

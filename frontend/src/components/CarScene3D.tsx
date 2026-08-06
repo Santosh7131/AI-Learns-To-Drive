@@ -611,18 +611,28 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
   const shadow = extent * 0.62;
   const sun: [number, number, number] = [cx - extent * 0.3, extent * 0.55, cz - extent * 0.22];
 
+  const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const el = containerRef.current;
     const fire = () => window.dispatchEvent(new Event("resize"));
+    // r3f's initial auto-measure can miss the container's real size inside a
+    // scrolling grid layout, leaving the canvas at its 300x150 default. Bridge
+    // any container resize to r3f, plus a few delayed nudges for first paint.
+    const ro = el ? new ResizeObserver(fire) : null;
+    ro?.observe(el as Element);
     const raf = requestAnimationFrame(fire);
-    const t = setTimeout(fire, 250);
+    const t1 = setTimeout(fire, 300);
+    const t2 = setTimeout(fire, 900);
     return () => {
+      ro?.disconnect();
       cancelAnimationFrame(raf);
-      clearTimeout(t);
+      clearTimeout(t1);
+      clearTimeout(t2);
     };
   }, []);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-xl border bg-[#0a0e16]">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden rounded-xl border bg-[#0a0e16]">
       <Canvas
         shadows
         dpr={[1, 1.75]}
