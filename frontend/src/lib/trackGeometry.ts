@@ -155,7 +155,9 @@ export function computeTrackEdges(
     const ds = (Math.hypot(x - ax, y - ay) + Math.hypot(cx - x, cy - y)) / 2;
     const radius = ds / (Math.abs(dphi) + 1e-6);
 
-    const clamp = Math.min(halfWidth, 0.8 * radius);
+    // clamp the inner edge to avoid fold-over at tight corners, but keep a
+    // minimum offset so the road never pinches to a triangle at sharp cusps
+    const clamp = Math.max(halfWidth * 0.4, Math.min(halfWidth, 0.8 * radius));
     // dphi > 0 => turning left => inner edge is the +normal (left) side
     const leftOff = dphi > 0 ? clamp : halfWidth;
     const rightOff = dphi > 0 ? halfWidth : clamp;

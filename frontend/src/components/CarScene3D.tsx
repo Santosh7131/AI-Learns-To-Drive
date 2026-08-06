@@ -129,11 +129,6 @@ function Terrain({ track }: { track: TrackGeometry }) {
 }
 
 // ---------------------------------------------------------------- track mesh
-function wrapPi(a: number) {
-  while (a > Math.PI) a -= 2 * Math.PI;
-  while (a < -Math.PI) a += 2 * Math.PI;
-  return a;
-}
 function norm2(x: number, y: number): [number, number] {
   const L = Math.hypot(x, y) || 1;
   return [x / L, y / L];
@@ -143,7 +138,7 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
   const { geometry, kerbGeom, left, right, centerLine } = useMemo(() => {
     const hw = track.halfWidth;
     // resample to a smooth, dense curve for rendering (physics keeps coarse pts)
-    const { pts, elev } = resampleClosed(track.centerline as Pt[], track.elevation, 4);
+    const { pts, elev } = resampleClosed(track.centerline as Pt[], track.elevation, 6);
     const M = pts.length;
     const { left: eL, right: eR } = computeTrackEdges(pts, hw);
     const yAt = (i: number) => elev[i] + TRACK_LIFT;
@@ -166,40 +161,30 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
     g.setIndex(idx);
     g.computeVertexNormals();
 
-    // ---- red/white kerbs at corners only (where the track actually turns) ----
-    const dphi = new Array(M);
-    for (let i = 0; i < M; i++) {
-      const [px, py] = pts[(i - 1 + M) % M];
-      const [x, y] = pts[i];
-      const [nx, ny] = pts[(i + 1) % M];
-      dphi[i] = Math.abs(wrapPi(Math.atan2(ny - y, nx - x) - Math.atan2(y - py, x - px)));
-    }
-    const kerbW = Math.min(4.5, hw * 0.16);
-    const cornerThr = 0.006; // per-segment turn threshold (scaled for the 4x resample)
+    // ---- continuous red/white curb ribbon along both edges ----
+    const kerbW = Math.min(3.2, hw * 0.12);
+    const stripeLen = Math.max(3, Math.round(M / 160)); // segments per colour block
     const kp: number[] = [];
     const kc: number[] = [];
     const ki: number[] = [];
     let v = 0;
     const addKerb = (edge: [number, number, number][]) => {
-      let stripe = 0;
       for (let i = 0; i < M; i++) {
         const i2 = (i + 1) % M;
-        if (dphi[i] < cornerThr && dphi[i2] < cornerThr) { stripe = 0; continue; }
         // outward normal = (edge - centerline), normalized
         const oA = norm2(edge[i][0] - pts[i][0], edge[i][2] - pts[i][1]);
         const oB = norm2(edge[i2][0] - pts[i2][0], edge[i2][2] - pts[i2][1]);
-        const yA = edge[i][1] + 0.06;
-        const yB = edge[i2][1] + 0.06;
+        const yA = edge[i][1] + 0.05;
+        const yB = edge[i2][1] + 0.05;
         kp.push(edge[i][0], yA, edge[i][2]);
         kp.push(edge[i][0] + oA[0] * kerbW, yA, edge[i][2] + oA[1] * kerbW);
         kp.push(edge[i2][0], yB, edge[i2][2]);
         kp.push(edge[i2][0] + oB[0] * kerbW, yB, edge[i2][2] + oB[1] * kerbW);
-        const red = stripe % 2 === 0;
-        const col = red ? [0.82, 0.13, 0.14] : [0.92, 0.92, 0.94];
+        const red = Math.floor(i / stripeLen) % 2 === 0;
+        const col = red ? [0.78, 0.12, 0.13] : [0.93, 0.93, 0.95];
         for (let k = 0; k < 4; k++) kc.push(col[0], col[1], col[2]);
         ki.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
         v += 4;
-        stripe++;
       }
     };
     addKerb(left);
