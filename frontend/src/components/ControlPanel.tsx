@@ -81,7 +81,7 @@ export function ControlPanel({ status, trackName, trackOptions, onTrackChange, f
         {/* transport */}
         <div className="space-y-2">
           {!running ? (
-            <Button onClick={() => call("start")} className="w-full shadow-glow">
+            <Button onClick={() => call("start")} className="w-full">
               <Play /> {status === "paused" ? "Resume training" : "Start training"}
             </Button>
           ) : (

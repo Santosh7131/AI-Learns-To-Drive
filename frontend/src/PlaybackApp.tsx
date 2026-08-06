@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Cpu, Sparkles, Flag, Boxes, Gauge, FlaskConical } from "lucide-react";
+import { Flag, Boxes, Gauge, Play, Trophy, Waypoints, Cpu, ArrowDown, FlaskConical } from "lucide-react";
 import { Arena, type HudStatSpec } from "@/components/Arena";
-import { Pill } from "@/components/StatusPill";
+import { TopNav, REPO_URL } from "@/components/TopNav";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import {
   LocalSimSource,
@@ -32,7 +32,6 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
 
-  // benchmark once, load the trained policy + track, start the local sim
   useEffect(() => {
     const s = benchmarkSystem();
     setScore(s);
@@ -58,8 +57,6 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
           onMetrics: setPb,
           onReady: (info) => {
             setReady(info);
-            // the worker reports whether it actually got a GPU device; if that
-            // differs from our guess, switch to the correct preset set + fleet.
             const actual = /gpu/i.test(info.device);
             if (actual !== gpuGuess) {
               setGpu(actual);
@@ -73,7 +70,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             console.error("[sim] worker error:", msg);
             if (hasBackend) {
               setServerFallback(true);
-              onGoLive(); // hand off to the server-streamed live view
+              onGoLive();
             }
           },
         });
@@ -106,77 +103,80 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     });
   };
 
-  const device = ready?.device ?? "Browser · CPU";
+  const device = ready?.device ?? (gpu ? "Browser · GPU" : "Browser · CPU");
   const stepsPerSec = pb?.stepsPerSec ?? 0;
   const modelStep = ready?.modelStep ?? pb?.modelStep ?? 0;
 
   const hud: HudStatSpec[] = [
-    { icon: <Flag className="h-3 w-3" />, label: "Laps", value: String(pb?.totalLaps ?? 0), accent: "green" },
-    { icon: <Gauge className="h-3 w-3" />, label: "Steps/s", value: stepsPerSec.toFixed(0), accent: "cyan" },
+    { icon: <Flag className="h-3 w-3" />, label: "Laps", value: String(pb?.totalLaps ?? 0) },
+    { icon: <Gauge className="h-3 w-3" />, label: "Steps/s", value: stepsPerSec.toFixed(0), accent: true },
     { icon: <Boxes className="h-3 w-3" />, label: "Cars", value: String(fleet) },
   ];
 
   return (
-    <div className="flex h-full flex-col">
-      {/* header */}
-      <header className="glass sticky top-0 z-20 flex items-center justify-between gap-3 rounded-none border-x-0 border-t-0 px-4 py-2.5 sm:px-5">
-        <div className="flex items-center gap-3">
-          <div className="glow-primary flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 to-primary/5 text-primary">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <div className="leading-tight">
-            <h1 className="text-[15px] font-semibold tracking-tight sm:text-base">Reinforcement Car</h1>
-            <p className="hidden text-xs text-muted-foreground sm:block">
-              Transformer policy · running in your browser
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Pill className="text-primary">
-            <Cpu className="h-3.5 w-3.5" />
-            <span className="font-semibold">{device}</span>
-          </Pill>
-          {score && (
-            <Pill className="hidden font-mono text-muted-foreground sm:flex">
-              score {score.score}
-            </Pill>
-          )}
-          <Pill className={running ? "text-primary" : "text-amber-400"}>
-            <span className={`h-2 w-2 rounded-full ${running ? "bg-primary animate-livepulse" : "bg-amber-400"}`} />
-            <span className="font-medium">{running ? "Live" : "Paused"}</span>
-          </Pill>
-          {hasBackend && (
+    <div id="top" className="min-h-full">
+      <TopNav
+        right={
+          hasBackend ? (
             <button
               onClick={onGoLive}
-              title="Switch to live training (backend)"
-              className="glass-hud flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white/70 transition-colors hover:text-white"
+              className="mr-1 hidden items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:flex"
             >
-              <FlaskConical className="h-3.5 w-3.5" /> Train
+              <FlaskConical className="h-3.5 w-3.5" /> Training console
             </button>
-          )}
-        </div>
-      </header>
+          ) : undefined
+        }
+      />
 
-      {/* main */}
-      <main className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        {track ? (
-          <Arena
-            track={track}
-            telemetryRef={telemetryRef}
-            numCars={fleet}
-            hud={hud}
-            caption="Every car is driven by the same Transformer policy, simulated live on your device. Grey = off-track (resetting); click a car to inspect its neural-net outputs."
-          />
-        ) : (
-          <div className="flex min-h-0 items-center justify-center rounded-2xl border bg-[#070a12] text-sm text-muted-foreground">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-            <span className="ml-2">Loading the trained model…</span>
+      <main className="mx-auto max-w-6xl px-4 sm:px-6">
+        {/* hero */}
+        <section className="pb-8 pt-14 sm:pt-20">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-secondary/50 px-3 py-1 text-xs text-muted-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-live opacity-60 animate-livepulse" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-live" />
+            </span>
+            Live · runs entirely in your browser
           </div>
-        )}
+          <h1 className="mt-5 max-w-3xl text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+            An AI that taught itself to drive.
+          </h1>
+          <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
+            No hand-coded rules. A Transformer policy trained with reinforcement learning discovered how to
+            steer, accelerate and brake — and the exact trained network is driving below, live, on your own
+            hardware.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <a
+              href="#demo"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              <Play className="h-4 w-4" /> Watch it drive
+            </a>
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              How it works <ArrowDown className="h-4 w-4" />
+            </a>
+          </div>
+        </section>
 
-        <aside className="scroll-slim flex min-h-0 flex-col gap-4 overflow-y-auto pb-1">
-          <div className="animate-rise" style={{ animationDelay: "40ms" }}>
+        {/* live demo */}
+        <section id="demo" className="scroll-mt-20 pb-16">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="h-[58vh] min-h-[420px]">
+              {track ? (
+                <Arena track={track} telemetryRef={telemetryRef} numCars={fleet} hud={hud} />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-xl border bg-[#0a0e16] text-sm text-white/60">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+                  <span className="ml-2">Loading the trained model…</span>
+                </div>
+              )}
+            </div>
             <PlaybackControls
               presets={presetsFor(gpu)}
               preset={preset}
@@ -190,8 +190,56 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
               serverFallback={serverFallback}
             />
           </div>
-        </aside>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Every car runs the same policy. Grey cars have gone off-track and are resetting. Click any car to
+            inspect the neural network's live steering / throttle / brake outputs and its lidar view.
+          </p>
+        </section>
+
+        {/* how it works */}
+        <section className="border-t py-14">
+          <h2 className="text-2xl font-bold tracking-tight">How it works</h2>
+          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {[
+              {
+                icon: <Trophy className="h-5 w-5" />,
+                title: "Learns by trial and error",
+                body: "With PPO reinforcement learning, cars are rewarded for making progress and penalised for leaving the track. Good driving emerges from millions of attempts — none of it is scripted.",
+              },
+              {
+                icon: <Waypoints className="h-5 w-5" />,
+                title: "A Transformer at the wheel",
+                body: "The policy attends over a short history of lidar rays and motion to choose continuous steering, throttle and brake — the same architecture behind modern language models.",
+              },
+              {
+                icon: <Cpu className="h-5 w-5" />,
+                title: "Runs on your hardware",
+                body: "The trained network was ported to run in the browser — batched on your GPU via WebGPU, or on the CPU — and validated to match the original PyTorch model to five decimals.",
+              },
+            ].map((c) => (
+              <div key={c.title} className="rounded-xl border bg-card p-5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-secondary/50 text-brand">
+                  {c.icon}
+                </div>
+                <h3 className="mt-4 text-base font-semibold">{c.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{c.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
+
+      <footer className="border-t">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
+          <div>AI Learns To Drive — a reinforcement-learning project.</div>
+          <div className="flex items-center gap-4">
+            <span className="text-xs">React · Three.js · PyTorch · WebGPU</span>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
