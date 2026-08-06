@@ -85,10 +85,9 @@ export function benchmarkSystem(): SystemScore {
     score >= 80 ? "ultra" : score >= 60 ? "high" : score >= 35 ? "medium" : "low";
   // With WebGPU the fleet runs on the GPU, so higher tiers are reachable; on CPU
   // cap the auto-pick at High. Ultra stays opt-in either way.
-  // Default to a clean, visible fleet; High/Ultra stay one click away.
-  const suggestedPreset: PresetId = webgpu
-    ? score >= 40 ? "medium" : "low"
-    : tier === "low" ? "low" : tier === "medium" ? "medium" : "high";
+  // Fleets are small now, so this is just a sensible default (a strong machine
+  // starts at 20, a weak one at 5); the user can pick any count.
+  const suggestedPreset: PresetId = score >= 55 ? "p20" : score >= 30 ? "p10" : "p5";
   return { score, tier, cores, memoryGB, webgpu, suggestedPreset };
 }
 
@@ -141,6 +140,9 @@ export class LocalSimSource {
   }
   resume() {
     this.post({ type: "resume" });
+  }
+  reset() {
+    this.post({ type: "reset" });
   }
   stop() {
     this.post({ type: "stop" });

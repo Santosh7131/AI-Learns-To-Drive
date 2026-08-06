@@ -21,6 +21,7 @@ export type WorkerIn =
   | { type: "config"; numEnvs?: number; stepsPerSec?: number }
   | { type: "pause" }
   | { type: "resume" }
+  | { type: "reset" }
   | { type: "stop" };
 
 export type WorkerOut =

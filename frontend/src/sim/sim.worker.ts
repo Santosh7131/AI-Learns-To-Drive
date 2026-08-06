@@ -184,6 +184,11 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
         env = new CarEnv(track, policy.physics as never, N, 1);
         buildWindow();
       }
+    } else if (msg.type === "reset") {
+      if (env) {
+        env.totalLaps = 0;
+        buildWindow(); // re-spawns all cars, clears the observation window + step count
+      }
     } else if (msg.type === "pause") {
       stopLoop();
     } else if (msg.type === "resume") {

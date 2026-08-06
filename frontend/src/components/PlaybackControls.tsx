@@ -1,15 +1,19 @@
-import { Play, Pause, Cpu, Zap } from "lucide-react";
+import { Play, Pause, RotateCcw, Cpu, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Preset, PresetId } from "@/sim/presets";
+import { Slider } from "@/components/ui/slider";
+import { PRESETS, CUSTOM_MIN, CUSTOM_MAX, type PresetId } from "@/sim/presets";
 import type { SystemScore } from "@/sim/source";
 
 interface Props {
-  presets: Preset[];
   preset: PresetId;
   onPreset: (id: PresetId) => void;
+  customFleet: number;
+  onCustomFleet: (n: number) => void;
+  fleet: number;
   running: boolean;
   onToggleRun: () => void;
+  onReset: () => void;
   score: SystemScore | null;
   device: string;
   stepsPerSec: number;
@@ -22,11 +26,14 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 export function PlaybackControls({
-  presets,
   preset,
   onPreset,
+  customFleet,
+  onCustomFleet,
+  fleet,
   running,
   onToggleRun,
+  onReset,
   score,
   device,
   stepsPerSec,
@@ -51,61 +58,68 @@ export function PlaybackControls({
               {serverFallback
                 ? "Device too weak for local sim — streaming from the server."
                 : onGpu
-                ? "The whole fleet's neural net runs on your GPU via WebGPU."
+                ? `Runs on your GPU via WebGPU${score ? ` · ${score.cores} cores` : ""}.`
                 : "The fleet is simulated on your CPU (no WebGPU here)."}
             </p>
           </div>
         </div>
 
-        {/* system score */}
-        {score && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label>System score</Label>
-              <span className="num text-sm font-semibold">{score.score}</span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-              <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${Math.max(4, Math.min(100, score.score))}%` }} />
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {score.cores} cores{score.memoryGB ? ` · ${score.memoryGB} GB` : ""} · {score.webgpu ? "WebGPU" : "no WebGPU"}
-            </p>
-          </div>
-        )}
-
-        {/* preset picker */}
+        {/* fleet size */}
         <div className="space-y-2">
-          <Label>Quality preset</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {presets.map((p) => {
-              const active = p.id === preset;
-              const fit = score?.suggestedPreset === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => onPreset(p.id)}
-                  className={`rounded-lg border p-2.5 text-left transition-colors ${
-                    active ? "border-brand bg-brand/5" : "hover:bg-accent"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">{p.label}</span>
-                    {fit && !active && (
-                      <span className="rounded bg-muted px-1 text-[9px] font-medium uppercase text-muted-foreground">fit</span>
-                    )}
-                  </div>
-                  <div className="num mt-0.5 text-[11px] text-muted-foreground">{p.fleet} cars</div>
-                </button>
-              );
-            })}
+          <div className="flex items-center justify-between">
+            <Label>Cars</Label>
+            <span className="num text-sm font-semibold">{fleet}</span>
           </div>
-          <p className="text-[11px] leading-snug text-muted-foreground">{presets.find((p) => p.id === preset)?.blurb}</p>
+          <div className="grid grid-cols-4 gap-2">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onPreset(p.id)}
+                className={`rounded-lg border py-2 text-sm font-semibold transition-colors ${
+                  preset === p.id ? "border-brand bg-brand/5 text-foreground" : "text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            <button
+              onClick={() => onPreset("custom")}
+              className={`rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                preset === "custom" ? "border-brand bg-brand/5 text-foreground" : "text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              Custom
+            </button>
+          </div>
+          {preset === "custom" && (
+            <div className="pt-1">
+              <Slider
+                min={CUSTOM_MIN}
+                max={CUSTOM_MAX}
+                step={1}
+                value={[customFleet]}
+                onValueChange={([v]) => onCustomFleet(v)}
+              />
+              <div className="mt-1.5 flex justify-between text-[11px] text-muted-foreground">
+                <span>{CUSTOM_MIN}</span>
+                <span className="num text-foreground">{customFleet} cars</span>
+                <span>{CUSTOM_MAX}</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        <Button onClick={onToggleRun} variant={running ? "outline" : "default"} className="w-full">
-          {running ? <Pause /> : <Play />} {running ? "Pause" : "Play"}
-        </Button>
+        {/* transport */}
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={onToggleRun} variant={running ? "outline" : "default"}>
+            {running ? <Pause /> : <Play />} {running ? "Pause" : "Play"}
+          </Button>
+          <Button onClick={onReset} variant="outline">
+            <RotateCcw /> Reset
+          </Button>
+        </div>
 
+        {/* live readouts */}
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border bg-secondary/40 p-2.5">
             <Label>Sim speed</Label>
