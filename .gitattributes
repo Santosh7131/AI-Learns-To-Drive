@@ -1,0 +1,9 @@
+# normalize line endings across platforms
+* text=auto eol=lf
+
+# keep Windows batch files CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# treat model/data blobs as binary
+*.pt binary

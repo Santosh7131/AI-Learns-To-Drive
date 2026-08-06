@@ -1,0 +1,42 @@
+[
+  {
+    "id": "mc-1929",
+    "label": "Monaco \u2014 Monte Carlo"
+  },
+  {
+    "id": "it-1922",
+    "label": "Monza"
+  },
+  {
+    "id": "gb-1948",
+    "label": "Silverstone"
+  },
+  {
+    "id": "be-1925",
+    "label": "Spa-Francorchamps"
+  },
+  {
+    "id": "jp-1962",
+    "label": "Suzuka"
+  },
+  {
+    "id": "bh-2002",
+    "label": "Bahrain"
+  },
+  {
+    "id": "us-2012",
+    "label": "COTA \u2014 Austin"
+  },
+  {
+    "id": "hu-1986",
+    "label": "Hungaroring"
+  },
+  {
+    "id": "au-1953",
+    "label": "Melbourne"
+  },
+  {
+    "id": "at-1969",
+    "label": "Red Bull Ring"
+  }
+]
