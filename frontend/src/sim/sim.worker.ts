@@ -29,6 +29,10 @@ let stepCount = 0;
 let accelScale: Float32Array | null = null;
 let steerWander: Float32Array | null = null;
 
+// human-driven car (advanced "drive it yourself" mode); -1 = none
+let playerIdx = -1;
+const playerAction = new Float32Array(3);
+
 // fps measurement (rolling)
 let fpsWindow: number[] = [];
 let lastMetrics = 0;
@@ -129,6 +133,40 @@ async function doStep() {
     }
   }
 
+  // 1c) traffic assist: ease off when closing on a car ahead. The policy can't
+  //     see other cars, so without this they drive straight through each other;
+  //     this makes a trailing car follow instead of ramming.
+  {
+    const LOOK = 26;
+    const LAT = 5.5;
+    for (let i = 0; i < N; i++) {
+      const hx = Math.cos(e.theta[i]);
+      const hy = Math.sin(e.theta[i]);
+      let nearest = Infinity;
+      for (let j = 0; j < N; j++) {
+        if (j === i) continue;
+        const dx = e.x[j] - e.x[i];
+        const dy = e.y[j] - e.y[i];
+        const fwd = dx * hx + dy * hy; // distance ahead
+        if (fwd <= 0 || fwd > LOOK) continue;
+        if (Math.abs(-dx * hy + dy * hx) > LAT) continue; // lateral gate
+        if (fwd < nearest) nearest = fwd;
+      }
+      if (nearest < LOOK) {
+        const t = 1 - nearest / LOOK; // 0 far → 1 nose-to-tail
+        a[i * 3 + 1] *= 1 - 0.9 * t;
+        a[i * 3 + 2] = Math.max(a[i * 3 + 2], t * 0.8);
+      }
+    }
+  }
+
+  // 1d) human-driven car: the player's input replaces the policy for this car
+  if (playerIdx >= 0 && playerIdx < N) {
+    a[playerIdx * 3] = Math.max(-1, Math.min(1, playerAction[0]));
+    a[playerIdx * 3 + 1] = Math.max(0, Math.min(1, playerAction[1]));
+    a[playerIdx * 3 + 2] = Math.max(0, Math.min(1, playerAction[2]));
+  }
+
   // 2) advance the world
   const obs = e.step(a);
   stepCount++;
@@ -207,6 +245,13 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
         env.totalLaps = 0;
         buildWindow(); // re-spawns all cars, clears the observation window + step count
       }
+    } else if (msg.type === "setPlayer") {
+      playerIdx = msg.index;
+      playerAction[0] = 0; playerAction[1] = 0; playerAction[2] = 0;
+    } else if (msg.type === "playerInput") {
+      playerAction[0] = msg.steer;
+      playerAction[1] = msg.accel;
+      playerAction[2] = msg.brake;
     } else if (msg.type === "pause") {
       stopLoop();
     } else if (msg.type === "resume") {

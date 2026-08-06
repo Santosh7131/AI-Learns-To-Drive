@@ -377,16 +377,23 @@ export class CarEnv {
         const d2 = dx * dx + dy * dy;
         if (d2 < R2 && d2 > 1e-6) {
           const d = Math.sqrt(d2);
-          const push = (R - d) * 0.5;
           const ux = dx / d;
           const uy = dy / d;
-          this.x[i] -= ux * push;
-          this.y[i] -= uy * push;
-          this.v[i] *= 0.55;
           if (this.stun[j] === 0) {
+            // both mobile: separate fully (half each) with a mild speed scrub
+            const push = (R - d) * 0.5;
+            this.x[i] -= ux * push;
+            this.y[i] -= uy * push;
             this.x[j] += ux * push;
             this.y[j] += uy * push;
-            this.v[j] *= 0.55;
+            this.v[i] *= 0.85;
+            this.v[j] *= 0.85;
+          } else {
+            // j is frozen: push i clear of it
+            const push = R - d;
+            this.x[i] -= ux * push;
+            this.y[i] -= uy * push;
+            this.v[i] *= 0.8;
           }
         }
       }

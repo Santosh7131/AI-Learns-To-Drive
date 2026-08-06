@@ -144,6 +144,12 @@ export class LocalSimSource {
   reset() {
     this.post({ type: "reset" });
   }
+  setPlayer(index: number) {
+    this.post({ type: "setPlayer", index });
+  }
+  playerInput(steer: number, accel: number, brake: number) {
+    this.post({ type: "playerInput", steer, accel, brake });
+  }
   stop() {
     this.post({ type: "stop" });
     this.stopped = true;

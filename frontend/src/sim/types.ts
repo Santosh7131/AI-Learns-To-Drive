@@ -22,6 +22,8 @@ export type WorkerIn =
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }
+  | { type: "setPlayer"; index: number } // -1 = none; else this car is human-driven
+  | { type: "playerInput"; steer: number; accel: number; brake: number }
   | { type: "stop" };
 
 export type WorkerOut =
