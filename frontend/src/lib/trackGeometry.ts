@@ -38,6 +38,45 @@ function wrap(a: number) {
   return ((a + Math.PI) % (2 * Math.PI)) - Math.PI;
 }
 
+// uniform Catmull-Rom interpolation of a scalar between p1 and p2
+function cr(p0: number, p1: number, p2: number, p3: number, t: number) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+
+/**
+ * Resample a closed centerline (+ its per-point elevation) to `factor`x density
+ * with a Catmull-Rom spline, so the rendered road/edges follow smooth curves
+ * instead of visible facets. Visual only — the physics keeps the coarse points.
+ */
+export function resampleClosed(
+  pts: Pt[],
+  elev: number[],
+  factor: number
+): { pts: Pt[]; elev: number[] } {
+  if (factor <= 1) return { pts: pts.slice(), elev: elev.slice() };
+  const M = pts.length;
+  const outPts: Pt[] = [];
+  const outElev: number[] = [];
+  for (let i = 0; i < M; i++) {
+    const a = pts[(i - 1 + M) % M];
+    const b = pts[i];
+    const c = pts[(i + 1) % M];
+    const d = pts[(i + 2) % M];
+    const ea = elev[(i - 1 + M) % M];
+    const eb = elev[i];
+    const ec = elev[(i + 1) % M];
+    const ed = elev[(i + 2) % M];
+    for (let s = 0; s < factor; s++) {
+      const t = s / factor;
+      outPts.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t)]);
+      outElev.push(cr(ea, eb, ec, ed, t));
+    }
+  }
+  return { pts: outPts, elev: outElev };
+}
+
 export function computeTrackEdges(
   pts: Pt[],
   halfWidth: number
