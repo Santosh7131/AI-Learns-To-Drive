@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Line, Sky } from "@react-three/drei";
+import { OrbitControls, Line, Sky, RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import type { Telemetry, TrackGeometry } from "@/lib/api";
 import {
   computeTrackEdges,
+  resampleClosed,
   terrainHeight,
   type Pt,
   type TerrainComp,
@@ -135,10 +136,10 @@ function norm2(x: number, y: number): [number, number] {
 }
 
 function TrackMesh({ track }: { track: TrackGeometry }) {
-  const { geometry, kerbGeom, left, right } = useMemo(() => {
-    const pts = track.centerline as Pt[];
-    const elev = track.elevation;
+  const { geometry, kerbGeom, left, right, centerLine } = useMemo(() => {
     const hw = track.halfWidth;
+    // resample to a smooth, dense curve for rendering (physics keeps coarse pts)
+    const { pts, elev } = resampleClosed(track.centerline as Pt[], track.elevation, 4);
     const M = pts.length;
     const { left: eL, right: eR } = computeTrackEdges(pts, hw);
     const yAt = (i: number) => elev[i] + TRACK_LIFT;
@@ -170,7 +171,7 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
       dphi[i] = Math.abs(wrapPi(Math.atan2(ny - y, nx - x) - Math.atan2(y - py, x - px)));
     }
     const kerbW = Math.min(4.5, hw * 0.16);
-    const cornerThr = 0.02;
+    const cornerThr = 0.006; // per-segment turn threshold (scaled for the 4x resample)
     const kp: number[] = [];
     const kc: number[] = [];
     const ki: number[] = [];
@@ -208,22 +209,18 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
       kerbGeom.computeVertexNormals();
     }
 
+    const centerLine: [number, number, number][] = pts.map(
+      ([x, y], i) => [x, elev[i] + TRACK_LIFT + 0.05, y]
+    );
     left.push(left[0]);
     right.push(right[0]);
-    return { geometry: g, kerbGeom, left, right };
+    return { geometry: g, kerbGeom, left, right, centerLine };
   }, [track]);
 
   useEffect(() => () => {
     geometry.dispose();
     kerbGeom?.dispose();
   }, [geometry, kerbGeom]);
-
-  const centerLine = useMemo(() => {
-    const elev = track.elevation;
-    return track.centerline.map(
-      ([x, y], i) => [x, elev[i] + TRACK_LIFT + 0.05, y] as [number, number, number]
-    );
-  }, [track]);
 
   const startLine = useMemo<[number, number, number][]>(() => [left[0], right[0]], [left, right]);
 
@@ -246,89 +243,94 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
 }
 
 // ---------------------------------------------------------- detailed F1 car
-const DARK = "#15161b";
-const RIM = "#cfd3da";
+// Smooth, rounded single-seater. Rounded panels + restrained metallic paint;
+// dark carbon for floor/wings/wheels. Body length along local +X, cabin +Y.
+const CARBON = "#16171c";
+const RIM = "#c7ccd6";
+const TIRE = "#0c0d10";
 function CarMesh({ color, selected }: { color: THREE.Color; selected: boolean }) {
-  const body = (
-    <meshStandardMaterial color={color} roughness={0.35} metalness={0.55} emissive={color} emissiveIntensity={selected ? 0.5 : 0.08} />
+  const paint = (
+    <meshStandardMaterial color={color} roughness={0.3} metalness={0.6} emissive={color} emissiveIntensity={selected ? 0.35 : 0.05} />
   );
+  const carbon = <meshStandardMaterial color={CARBON} roughness={0.55} metalness={0.2} />;
   return (
     <group>
-      <mesh position={[-0.2, 0.55, 0]} castShadow>
-        <boxGeometry args={[9, 0.35, 3]} />
-        <meshStandardMaterial color={DARK} roughness={0.7} />
+      {/* floor / chassis */}
+      <RoundedBox args={[9.2, 0.4, 3.0]} radius={0.14} smoothness={3} position={[-0.2, 0.5, 0]} castShadow>
+        {carbon}
+      </RoundedBox>
+      {/* nose cone */}
+      <mesh position={[3.9, 0.85, 0]} rotation={[0, 0, -Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.16, 0.7, 3.2, 20]} />
+        {paint}
       </mesh>
-      <mesh position={[-0.6, 1.05, 0]} castShadow>
-        <boxGeometry args={[4.6, 1.0, 2.1]} />
-        {body}
-      </mesh>
-      <mesh position={[3.6, 0.95, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.2, 0.85, 3.4, 16]} />
-        {body}
-      </mesh>
-      <mesh position={[-2.7, 1.25, 0]} castShadow>
-        <boxGeometry args={[3.2, 1.3, 1.2]} />
-        {body}
-      </mesh>
-      <mesh position={[-3.4, 2.0, 0]} castShadow>
-        <boxGeometry args={[2.0, 1.0, 0.12]} />
-        {body}
-      </mesh>
+      {/* cockpit tub */}
+      <RoundedBox args={[4.8, 0.95, 1.9]} radius={0.3} smoothness={3} position={[-0.4, 1.05, 0]} castShadow>
+        {paint}
+      </RoundedBox>
+      {/* engine cover, tapering back */}
+      <RoundedBox args={[3.4, 1.15, 1.0]} radius={0.28} smoothness={3} position={[-2.6, 1.2, 0]} castShadow>
+        {paint}
+      </RoundedBox>
+      {/* airbox scoop above the driver */}
+      <RoundedBox args={[1.2, 0.7, 0.7]} radius={0.2} smoothness={3} position={[-1.5, 1.85, 0]} castShadow>
+        {carbon}
+      </RoundedBox>
+      {/* side pods */}
       {[1.35, -1.35].map((z, i) => (
-        <mesh key={i} position={[-1.2, 0.95, z]} castShadow>
-          <boxGeometry args={[3.0, 0.9, 0.9]} />
-          {body}
-        </mesh>
+        <RoundedBox key={i} args={[3.2, 0.9, 0.95]} radius={0.28} smoothness={3} position={[-1.1, 0.95, z]} castShadow>
+          {paint}
+        </RoundedBox>
       ))}
-      <mesh position={[0.4, 1.65, 0]}>
-        <sphereGeometry args={[0.62, 16, 12]} />
-        <meshStandardMaterial color="#0b0d14" roughness={0.15} metalness={0.7} />
+      {/* cockpit opening + halo */}
+      <mesh position={[0.35, 1.55, 0]}>
+        <sphereGeometry args={[0.55, 20, 14]} />
+        <meshStandardMaterial color="#0a0c12" roughness={0.12} metalness={0.75} />
       </mesh>
-      <mesh position={[1.0, 1.9, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.7, 0.08, 8, 24, Math.PI]} />
-        <meshStandardMaterial color={DARK} metalness={0.5} roughness={0.4} />
+      <mesh position={[0.9, 1.75, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.72, 0.07, 12, 28, Math.PI]} />
+        {carbon}
       </mesh>
-      <mesh position={[4.7, 0.45, 0]} castShadow>
-        <boxGeometry args={[1.3, 0.12, 4.0]} />
-        <meshStandardMaterial color={DARK} roughness={0.5} />
-      </mesh>
-      {[2.0, -2.0].map((z, i) => (
-        <mesh key={i} position={[4.7, 0.7, z]}>
-          <boxGeometry args={[1.3, 0.8, 0.12]} />
-          {body}
-        </mesh>
+      {/* front wing + endplates */}
+      <RoundedBox args={[1.4, 0.12, 4.1]} radius={0.05} smoothness={2} position={[4.85, 0.42, 0]} castShadow>
+        {carbon}
+      </RoundedBox>
+      {[2.02, -2.02].map((z, i) => (
+        <RoundedBox key={i} args={[1.4, 0.78, 0.12]} radius={0.05} smoothness={2} position={[4.85, 0.68, z]}>
+          {paint}
+        </RoundedBox>
       ))}
-      <mesh position={[-4.6, 2.5, 0]} castShadow>
-        <boxGeometry args={[1.3, 0.16, 3.4]} />
-        {body}
-      </mesh>
-      {[1.6, -1.6].map((z, i) => (
-        <mesh key={i} position={[-4.6, 2.0, z]}>
-          <boxGeometry args={[1.5, 1.3, 0.12]} />
-          <meshStandardMaterial color={DARK} roughness={0.5} />
-        </mesh>
+      {/* rear wing + endplates */}
+      <RoundedBox args={[1.5, 0.16, 3.4]} radius={0.06} smoothness={2} position={[-4.7, 2.35, 0]} castShadow>
+        {paint}
+      </RoundedBox>
+      {[1.62, -1.62].map((z, i) => (
+        <RoundedBox key={i} args={[1.6, 1.25, 0.12]} radius={0.06} smoothness={2} position={[-4.7, 1.85, z]}>
+          {carbon}
+        </RoundedBox>
       ))}
+      {/* wheels */}
       {([
-        [2.9, 1.9],
-        [2.9, -1.9],
-        [-3.0, 1.9],
-        [-3.0, -1.9],
+        [2.9, 1.95],
+        [2.9, -1.95],
+        [-3.0, 1.95],
+        [-3.0, -1.95],
       ] as const).map(([wx, wz], i) => (
         <group key={i} position={[wx, 0.9, wz]} rotation={[Math.PI / 2, 0, 0]}>
           <mesh castShadow>
-            <cylinderGeometry args={[0.95, 0.95, 0.85, 18]} />
-            <meshStandardMaterial color="#0c0c0f" roughness={0.85} />
+            <cylinderGeometry args={[0.92, 0.92, 0.9, 24]} />
+            <meshStandardMaterial color={TIRE} roughness={0.85} metalness={0.05} />
           </mesh>
           <mesh>
-            <cylinderGeometry args={[0.52, 0.52, 0.88, 12]} />
-            <meshStandardMaterial color={RIM} metalness={0.8} roughness={0.3} />
+            <cylinderGeometry args={[0.5, 0.5, 0.92, 16]} />
+            <meshStandardMaterial color={RIM} metalness={0.85} roughness={0.28} />
           </mesh>
         </group>
       ))}
       {selected && (
-        <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[7.2, 0.45, 10, 44]} />
-          <meshStandardMaterial color="#38e5ff" emissive="#38e5ff" emissiveIntensity={1.2} />
+        <mesh position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[6.4, 7.2, 48]} />
+          <meshBasicMaterial color="#2563eb" transparent opacity={0.9} side={THREE.DoubleSide} />
         </mesh>
       )}
     </group>
@@ -432,10 +434,19 @@ interface ISt { x: number; y: number; z: number; vx: number; vy: number; theta: 
 
 function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20 }: Omit<Props, "chase">) {
   const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const cabinRef = useRef<THREE.InstancedMesh>(null);
   const state = useRef<ISt[]>([]);
   const off = useRef<Uint8Array>(new Uint8Array(0));
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const grey = useMemo(() => new THREE.Color("#5b606b"), []);
+  // two-tone car silhouette: a rounded body + a darker cabin baked slightly up/back
+  const bodyGeo = useMemo(() => new THREE.BoxGeometry(6.6, 1.0, 2.9), []);
+  const cabinGeo = useMemo(() => {
+    const g = new THREE.BoxGeometry(3.1, 0.8, 2.15);
+    g.translate(-0.35, 0.85, 0);
+    return g;
+  }, []);
+  useEffect(() => () => { bodyGeo.dispose(); cabinGeo.dispose(); }, [bodyGeo, cabinGeo]);
 
   // (re)assign per-instance colors when the fleet size changes
   useEffect(() => {
@@ -449,7 +460,8 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
   useFrame((_, rawDelta) => {
     const tele = telemetryRef.current;
     const bm = bodyRef.current;
-    if (!tele || !bm) return;
+    const cm = cabinRef.current;
+    if (!tele || !bm || !cm) return;
     const cars = tele.cars;
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
@@ -477,6 +489,7 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
       dummy.rotation.set(0, -r.theta, 0);
       dummy.updateMatrix();
       bm.setMatrixAt(i, dummy.matrix);
+      cm.setMatrixAt(i, dummy.matrix);
       const o = t.offtrack ? 1 : 0;
       if (off.current[i] !== o) {
         off.current[i] = o;
@@ -485,24 +498,30 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
       }
     }
     bm.count = n;
+    cm.count = n;
     bm.instanceMatrix.needsUpdate = true;
+    cm.instanceMatrix.needsUpdate = true;
     if (colorDirty && bm.instanceColor) bm.instanceColor.needsUpdate = true;
   });
 
   return (
-    <instancedMesh
-      ref={bodyRef}
-      args={[undefined, undefined, numCars]}
-      castShadow
-      receiveShadow
-      onClick={(e) => {
-        e.stopPropagation();
-        if (e.instanceId != null) onSelect(e.instanceId === selectedId ? null : e.instanceId);
-      }}
-    >
-      <boxGeometry args={[6.8, 1.2, 2.9]} />
-      <meshStandardMaterial metalness={0.35} roughness={0.5} />
-    </instancedMesh>
+    <group>
+      <instancedMesh
+        ref={bodyRef}
+        args={[bodyGeo, undefined, numCars]}
+        castShadow
+        receiveShadow
+        onClick={(e) => {
+          e.stopPropagation();
+          if (e.instanceId != null) onSelect(e.instanceId === selectedId ? null : e.instanceId);
+        }}
+      >
+        <meshStandardMaterial metalness={0.5} roughness={0.4} />
+      </instancedMesh>
+      <instancedMesh ref={cabinRef} args={[cabinGeo, undefined, numCars]} castShadow>
+        <meshStandardMaterial color="#0b0d13" metalness={0.6} roughness={0.25} />
+      </instancedMesh>
+    </group>
   );
 }
 
