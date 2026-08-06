@@ -65,11 +65,12 @@ interface ArenaProps {
   active?: boolean;
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  forceChaseCar?: number | null; // manual-drive: select + chase this car
 }
 
 /** Shared live 3D/2D race view: renderers, HUD, view/camera controls, racing
  * line, click-to-inspect, fullscreen. Owns view-only state. */
-export function Arena({ track, telemetryRef, numCars, hud, active = true, fullscreen, onToggleFullscreen }: ArenaProps) {
+export function Arena({ track, telemetryRef, numCars, hud, active = true, fullscreen, onToggleFullscreen, forceChaseCar }: ArenaProps) {
   const [selectedCar, setSelectedCar] = useState<number | null>(null);
   const [showSensors, setShowSensors] = useState(false);
   const [view, setView] = useState<"3d" | "2d">("3d");
@@ -80,12 +81,33 @@ export function Arena({ track, telemetryRef, numCars, hud, active = true, fullsc
     if (selectedCar !== null && selectedCar >= numCars) setSelectedCar(null);
   }, [numCars, selectedCar]);
 
+  // manual-drive: follow the player's car
+  useEffect(() => {
+    if (forceChaseCar != null && forceChaseCar >= 0) {
+      setSelectedCar(forceChaseCar);
+      setChase(true);
+      setView("3d");
+    } else if (forceChaseCar === null) {
+      setChase(false);
+    }
+  }, [forceChaseCar]);
+
+  // Chase: if nothing is selected, grab a random car and follow it
+  const startChase = () => {
+    if (chase) {
+      setChase(false);
+      return;
+    }
+    if (selectedCar === null) setSelectedCar(Math.floor(Math.random() * Math.max(1, numCars)));
+    setChase(true);
+  };
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl border bg-[#0a0e16]">
       {view === "3d" ? (
         <ErrorBoundary
           fallback={
-            <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} />
+            <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} showRacingLine={racingLine} />
           }
         >
           <Suspense
@@ -109,7 +131,7 @@ export function Arena({ track, telemetryRef, numCars, hud, active = true, fullsc
           </Suspense>
         </ErrorBoundary>
       ) : (
-        <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} />
+        <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} showRacingLine={racingLine} />
       )}
 
       {/* live HUD */}
@@ -121,18 +143,16 @@ export function Arena({ track, telemetryRef, numCars, hud, active = true, fullsc
 
       {/* view + camera controls */}
       <div className="absolute right-3 top-3 flex flex-wrap items-center justify-end gap-2">
-        {view === "3d" && (
-          <OverlayToggle active={racingLine} onClick={() => setRacingLine((s) => !s)} title="Show the ideal racing line">
-            <Spline className="h-3.5 w-3.5" /> Line
-          </OverlayToggle>
-        )}
+        <OverlayToggle active={racingLine} onClick={() => setRacingLine((s) => !s)} title="Show the ideal racing line">
+          <Spline className="h-3.5 w-3.5" /> Line
+        </OverlayToggle>
         {view === "2d" && (
           <OverlayToggle active={showSensors} onClick={() => setShowSensors((s) => !s)}>
             <Radar className="h-3.5 w-3.5" /> Sensors
           </OverlayToggle>
         )}
         {view === "3d" && (
-          <OverlayToggle active={chase} disabled={selectedCar === null} onClick={() => setChase((c) => !c)} title={selectedCar === null ? "Select a car first" : "Chase camera"}>
+          <OverlayToggle active={chase} onClick={startChase} title="Chase a car (picks one if none selected)">
             <Camera className="h-3.5 w-3.5" /> Chase
           </OverlayToggle>
         )}

@@ -1,4 +1,5 @@
-import { Play, Pause, RotateCcw, Cpu, Zap } from "lucide-react";
+import { useState } from "react";
+import { Play, Pause, RotateCcw, Cpu, Zap, ChevronDown, Gamepad2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -16,6 +17,8 @@ interface Props {
   onReset: () => void;
   speed: number;
   onSpeed: (n: number) => void;
+  manual: boolean;
+  onManual: (v: boolean) => void;
   score: SystemScore | null;
   device: string;
   stepsPerSec: number;
@@ -38,12 +41,15 @@ export function PlaybackControls({
   onReset,
   speed,
   onSpeed,
+  manual,
+  onManual,
   score,
   device,
   stepsPerSec,
   modelStep,
   serverFallback,
 }: Props) {
+  const [advanced, setAdvanced] = useState(false);
   const onGpu = device.includes("GPU");
   return (
     <Card className="shadow-sm">
@@ -147,6 +153,42 @@ export function PlaybackControls({
               {(modelStep / 1e6).toFixed(1)}M<span className="ml-1 text-[10px] font-normal text-muted-foreground">steps</span>
             </div>
           </div>
+        </div>
+
+        {/* advanced */}
+        <div className="border-t pt-4">
+          <button
+            onClick={() => setAdvanced((a) => !a)}
+            className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Advanced
+            <ChevronDown className={`h-4 w-4 transition-transform ${advanced ? "rotate-180" : ""}`} />
+          </button>
+          {advanced && (
+            <div className="mt-3 space-y-3">
+              <button
+                onClick={() => onManual(!manual)}
+                className={`flex w-full items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${manual ? "border-brand bg-brand/5" : "hover:bg-accent"}`}
+              >
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${manual ? "bg-brand/10 text-brand" : "bg-muted text-muted-foreground"}`}>
+                  <Gamepad2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Drive a car yourself</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {manual ? "You're driving — chase cam on." : "Take the wheel among the AI cars."}
+                  </div>
+                </div>
+              </button>
+              {manual && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <span><kbd className="num rounded bg-secondary px-1">W</kbd>/<kbd className="num rounded bg-secondary px-1">↑</kbd> throttle</span>
+                  <span><kbd className="num rounded bg-secondary px-1">S</kbd>/<kbd className="num rounded bg-secondary px-1">↓</kbd> brake</span>
+                  <span><kbd className="num rounded bg-secondary px-1">A</kbd><kbd className="num rounded bg-secondary px-1">D</kbd> steer</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

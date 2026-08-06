@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Flag, Gauge, Boxes, Play, Trophy, Waypoints, Cpu, ArrowDown, FlaskConical } from "lucide-react";
+import { Flag, Gauge, Boxes, Play, ArrowDown, FlaskConical } from "lucide-react";
 import { Arena, type HudStatSpec } from "@/components/Arena";
 import { TopNav, REPO_URL } from "@/components/TopNav";
 import { PlaybackControls } from "@/components/PlaybackControls";
@@ -29,6 +29,8 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const [serverFallback, setServerFallback] = useState(false);
   const [fs, setFs] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [manual, setManual] = useState(false);
+  const PLAYER_CAR = 0;
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
   const demoRef = useRef<HTMLDivElement>(null);
@@ -105,6 +107,40 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     setSpeed(n);
     srcRef.current?.setRate(STEPS_PER_SEC * n);
   };
+  const toggleManual = (v: boolean) => {
+    setManual(v);
+    srcRef.current?.setPlayer(v ? PLAYER_CAR : -1);
+  };
+
+  // keyboard control for the human-driven car (advanced mode)
+  useEffect(() => {
+    if (!manual) return;
+    const keys = new Set<string>();
+    const DRIVE = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"];
+    const send = () => {
+      const steer = (keys.has("d") || keys.has("arrowright") ? 1 : 0) - (keys.has("a") || keys.has("arrowleft") ? 1 : 0);
+      const accel = keys.has("w") || keys.has("arrowup") ? 1 : 0;
+      const brake = keys.has("s") || keys.has("arrowdown") ? 1 : 0;
+      srcRef.current?.playerInput(steer, accel, brake);
+    };
+    const down = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (!DRIVE.includes(k)) return;
+      e.preventDefault();
+      if (!keys.has(k)) { keys.add(k); send(); }
+    };
+    const up = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (keys.delete(k)) send();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      srcRef.current?.playerInput(0, 0, 0);
+    };
+  }, [manual]);
   const toggleFullscreen = () => {
     const el = demoRef.current;
     if (!el) return;
@@ -134,6 +170,8 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       onReset={reset}
       speed={speed}
       onSpeed={changeSpeed}
+      manual={manual}
+      onManual={toggleManual}
       score={score}
       device={device}
       stepsPerSec={stepsPerSec}
@@ -160,20 +198,12 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       <main className="mx-auto max-w-6xl px-4 sm:px-6">
         {/* hero */}
         <section className="pb-8 pt-14 sm:pt-20">
-          <div className="inline-flex items-center gap-2 rounded-full border bg-secondary/50 px-3 py-1 text-xs text-muted-foreground">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-live opacity-60 animate-livepulse" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-live" />
-            </span>
-            Live · runs entirely in your browser
-          </div>
-          <h1 className="mt-5 max-w-3xl text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+          <h1 className="max-w-3xl text-balance text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
             An AI that taught itself to drive.
           </h1>
           <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-            No hand-coded rules. A Transformer policy trained with reinforcement learning discovered how to
-            steer, accelerate and brake — and the exact trained network is driving below, live, on your own
-            hardware.
+            No hand‑coded rules. A Transformer policy trained with reinforcement learning discovered how to
+            steer, brake and hold a racing line — from nothing but trial, error and reward. Watch it drive below.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <button
@@ -185,7 +215,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             >
               <Play className="h-4 w-4" /> Watch it drive
             </button>
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent">
+            <a href="#how" className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent">
               How it works <ArrowDown className="h-4 w-4" />
             </a>
           </div>
@@ -211,6 +241,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
                   active={running}
                   fullscreen={fs}
                   onToggleFullscreen={toggleFullscreen}
+                  forceChaseCar={manual ? PLAYER_CAR : null}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center rounded-xl border bg-[#0a0e16] text-sm text-white/60">
@@ -230,19 +261,63 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
           )}
         </section>
 
-        {/* how it works */}
-        <section className="border-t py-14">
-          <h2 className="text-2xl font-bold tracking-tight">How it works</h2>
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
+        {/* documentation */}
+        <section id="how" className="border-t py-16">
+          <div className="max-w-3xl">
+            <p className="text-sm font-medium text-brand">How it works</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Teaching a car to drive with zero rules</h2>
+            <p className="mt-4 leading-relaxed text-muted-foreground">
+              The car is never shown a racing line or told how to take a corner. It's given one goal — get as far
+              around the track as possible without crashing — and left to work out the rest through reinforcement
+              learning. This is the loop it repeated millions of times.
+            </p>
+          </div>
+
+          <ol className="mt-10 space-y-8">
             {[
-              { icon: <Trophy className="h-5 w-5" />, title: "Learns by trial and error", body: "With PPO reinforcement learning, cars are rewarded for making progress and penalised for leaving the track. Good driving emerges from millions of attempts — none of it is scripted." },
-              { icon: <Waypoints className="h-5 w-5" />, title: "A Transformer at the wheel", body: "The policy attends over a short history of lidar rays and motion to choose continuous steering, throttle and brake — the same architecture behind modern language models." },
-              { icon: <Cpu className="h-5 w-5" />, title: "Runs on your hardware", body: "The trained network was ported to run in the browser — batched on your GPU via WebGPU, or on the CPU — and validated to match the original PyTorch model to five decimals." },
-            ].map((c) => (
-              <div key={c.title} className="rounded-xl border bg-card p-5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border bg-secondary/50 text-brand">{c.icon}</div>
-                <h3 className="mt-4 text-base font-semibold">{c.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{c.body}</p>
+              {
+                title: "A goal, not instructions",
+                body: "The only feedback is a number: a small reward for every bit of forward progress along the track, and a penalty for going off it. There are no example laps to copy and no steering angles to memorise — just the score.",
+              },
+              {
+                title: "What the car senses",
+                body: "Each step the car reads seven distance sensors fanned out ahead (how far the track edge is in each direction), plus its own speed and how far its heading has drifted from the track — ten numbers in total. That is its entire view of the world; notably, it cannot see the other cars.",
+              },
+              {
+                title: "The decision — a Transformer",
+                body: "Those readings, plus a short memory of the previous few, feed a small Transformer — the same family of model behind today's language models. It outputs three continuous controls every step: steering, throttle and brake.",
+              },
+              {
+                title: "Learning from reward (PPO)",
+                body: "Many cars run in parallel to gather experience, and an algorithm called PPO gently shifts the network's weights so that actions leading to more reward become more likely. Braking for corners, carrying speed on the straights and holding a line all emerge on their own — none of it is programmed.",
+              },
+              {
+                title: "The trained driver you see here",
+                body: "Once training converges, the finished network is frozen and re-implemented to run this page. Every car above is that same trained policy — validated to reproduce the original model's decisions to five decimal places. It is playing back what it learned, not learning live.",
+              },
+            ].map((s, i) => (
+              <li key={s.title} className="flex gap-4 sm:gap-6">
+                <div className="num flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-semibold text-brand">
+                  {i + 1}
+                </div>
+                <div className="max-w-2xl">
+                  <h3 className="text-base font-semibold">{s.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4">
+            {[
+              { value: "10", label: "sensor inputs" },
+              { value: "3", label: "continuous controls" },
+              { value: "2.4M", label: "training steps" },
+              { value: "0", label: "hand-coded driving rules" },
+            ].map((f) => (
+              <div key={f.label} className="bg-card p-4">
+                <div className="num text-2xl font-bold">{f.value}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{f.label}</div>
               </div>
             ))}
           </div>

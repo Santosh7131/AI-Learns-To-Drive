@@ -33,7 +33,7 @@ export function TopNav({ right, compact }: Props) {
           <Mark />
           <div className="leading-none">
             <div className="text-sm font-semibold tracking-tight">AI Learns To Drive</div>
-            {!compact && <div className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">Reinforcement learning · in your browser</div>}
+            {!compact && <div className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">Reinforcement learning</div>}
           </div>
         </a>
 

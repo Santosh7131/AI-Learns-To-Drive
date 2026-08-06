@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Telemetry, TrackGeometry } from "@/lib/api";
-import { computeTrackEdges, type Pt } from "@/lib/trackGeometry";
+import { computeTrackEdges, racingLine, type Pt } from "@/lib/trackGeometry";
 import { carColorCss, lerpAngle } from "@/lib/carViz";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   selectedId: number | null;
   onSelect: (id: number | null) => void;
   showSensors: boolean;
+  showRacingLine?: boolean;
 }
 
 interface RenderCar {
@@ -116,7 +117,7 @@ function drawCar(
   }
 }
 
-export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSensors }: Props) {
+export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSensors, showRacingLine }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const rendered = useRef<RenderCar[]>([]);
@@ -126,6 +127,8 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
   selectedRef.current = selectedId;
   const showSensorsRef = useRef(showSensors);
   showSensorsRef.current = showSensors;
+  const showRacingLineRef = useRef(showRacingLine);
+  showRacingLineRef.current = showRacingLine;
   const transformRef = useRef<{
     scale: number;
     offX: number;
@@ -194,6 +197,7 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
     // precompute inner / outer track boundaries (curvature-clamped so edges
     // don't fold over at corners tighter than the track width)
     const { left: inner, right: outer } = computeTrackEdges(pts as Pt[], hw);
+    const racePts = racingLine(pts as Pt[], hw); // ideal line (render-only)
 
     let lastT = performance.now();
     const draw = (now: number) => {
@@ -286,13 +290,29 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
       drawCurb(inner);
       drawCurb(outer);
 
-      // ---- dashed racing line ----
+      // ---- faint centre lane marking ----
       centerPath();
       ctx.setLineDash([7 * dpr, 11 * dpr]);
       ctx.strokeStyle = "rgba(255,255,255,0.14)";
       ctx.lineWidth = Math.max(1, 1.5 * dpr);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // ---- ideal racing line (red, toggled) ----
+      if (showRacingLineRef.current) {
+        ctx.beginPath();
+        racePts.forEach(([x, y], i) => {
+          const px = sx(x);
+          const py = sy(y);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = "rgba(255,59,48,0.95)";
+        ctx.lineWidth = Math.max(2, 2.5 * dpr);
+        ctx.lineJoin = "round";
+        ctx.stroke();
+      }
 
       // ---- checkered start/finish line ----
       {
