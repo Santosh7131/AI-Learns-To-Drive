@@ -35,6 +35,9 @@ from rl.trainer import CKPT_DIR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.abspath(os.path.join(HERE, "..", "frontend", "public", "web"))
+# the parity trace is a dev artifact (used by frontend/scripts/parity.ts), kept
+# OUT of public/ so it isn't bundled into the deployed static site.
+PARITY_DIR = os.path.abspath(os.path.join(HERE, "..", "frontend", "scripts"))
 
 # model architecture (must mirror model.py defaults / trainer construction)
 ARCH = dict(d_model=64, nhead=4, num_layers=2, dim_ff=128)
@@ -182,11 +185,12 @@ def main():
             json.dump(geo, f, separators=(",", ":"))
     print(f"[export] {len(tracks)} track geometries")
 
-    # ---- parity trace ----
+    # ---- parity trace (dev only; not deployed) ----
+    os.makedirs(PARITY_DIR, exist_ok=True)
     trace = build_parity_trace(model, args.track)
-    with open(os.path.join(OUT_DIR, "parity-trace.json"), "w") as f:
+    with open(os.path.join(PARITY_DIR, "parity-trace.json"), "w") as f:
         json.dump(trace, f)
-    print(f"[export] parity-trace.json  ({len(trace['steps'])} steps on '{args.track}')")
+    print(f"[export] scripts/parity-trace.json  ({len(trace['steps'])} steps on '{args.track}')")
     print(f"[export] done -> {OUT_DIR}")
 
 

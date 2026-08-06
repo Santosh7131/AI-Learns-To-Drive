@@ -12,11 +12,11 @@ import { CarEnv, type PhysicsConfig, type TrackData } from "../src/sim/env.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB = join(HERE, "..", "public", "web");
-const read = (f: string) => JSON.parse(readFileSync(join(WEB, f), "utf8"));
+const readWeb = (f: string) => JSON.parse(readFileSync(join(WEB, f), "utf8"));
 
-const policyFile = read("policy.json") as PolicyFile;
-const trace = read("parity-trace.json");
-const track = read(`track-${trace.track}.json`) as TrackData;
+const policyFile = readWeb("policy.json") as PolicyFile;
+const trace = JSON.parse(readFileSync(join(HERE, "parity-trace.json"), "utf8")); // dev artifact lives beside this script
+const track = readWeb(`track-${trace.track}.json`) as TrackData;
 
 const policy = new Policy(policyFile);
 const cfg = policyFile.physics as unknown as PhysicsConfig;
