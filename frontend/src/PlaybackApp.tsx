@@ -30,6 +30,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const [fs, setFs] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [manual, setManual] = useState(false);
+  const [untrained, setUntrained] = useState(false);
   const PLAYER_CAR = 0;
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
@@ -111,6 +112,10 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     setManual(v);
     srcRef.current?.setPlayer(v ? PLAYER_CAR : -1);
   };
+  const toggleUntrained = (v: boolean) => {
+    setUntrained(v);
+    srcRef.current?.setUntrained(v);
+  };
 
   // keyboard control for the human-driven car (advanced mode)
   useEffect(() => {
@@ -172,6 +177,8 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       onSpeed={changeSpeed}
       manual={manual}
       onManual={toggleManual}
+      untrained={untrained}
+      onUntrained={toggleUntrained}
       score={score}
       device={device}
       stepsPerSec={stepsPerSec}

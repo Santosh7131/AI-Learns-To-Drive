@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play, Pause, RotateCcw, Cpu, Zap, ChevronDown, Gamepad2 } from "lucide-react";
+import { Play, Pause, RotateCcw, Cpu, Zap, ChevronDown, Gamepad2, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -19,6 +19,8 @@ interface Props {
   onSpeed: (n: number) => void;
   manual: boolean;
   onManual: (v: boolean) => void;
+  untrained: boolean;
+  onUntrained: (v: boolean) => void;
   score: SystemScore | null;
   device: string;
   stepsPerSec: number;
@@ -43,6 +45,8 @@ export function PlaybackControls({
   onSpeed,
   manual,
   onManual,
+  untrained,
+  onUntrained,
   score,
   device,
   stepsPerSec,
@@ -187,6 +191,23 @@ export function PlaybackControls({
                   <span><kbd className="num rounded bg-secondary px-1">A</kbd><kbd className="num rounded bg-secondary px-1">D</kbd> steer</span>
                 </div>
               )}
+
+              <button
+                onClick={() => onUntrained(!untrained)}
+                className={`flex w-full items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${untrained ? "border-brand bg-brand/5" : "hover:bg-accent"}`}
+              >
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${untrained ? "bg-brand/10 text-brand" : "bg-muted text-muted-foreground"}`}>
+                  <FlaskConical className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Untrained network</div>
+                  <div className="text-[11px] leading-snug text-muted-foreground">
+                    {untrained
+                      ? "Random flailing — the AI before any training. Toggle off for the trained driver."
+                      : "See what the car does before it learns to drive."}
+                  </div>
+                </div>
+              </button>
             </div>
           )}
         </div>

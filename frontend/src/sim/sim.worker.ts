@@ -32,6 +32,8 @@ let steerWander: Float32Array | null = null;
 // human-driven car (advanced "drive it yourself" mode); -1 = none
 let playerIdx = -1;
 const playerAction = new Float32Array(3);
+// untrained mode: a random policy — what the network looks like before it learns
+let untrained = false;
 
 // fps measurement (rolling)
 let fpsWindow: number[] = [];
@@ -104,9 +106,19 @@ async function doStep() {
   const a = actions!;
   const KO = K * O;
 
-  // 1) actions from the policy for every car. The window buffer is already in
-  //    the [N*K*O] batch layout the GPU shader wants, so pass it straight through.
-  if (useGpu && gpu) {
+  // 1) actions for every car. The window buffer is already in the [N*K*O] batch
+  //    layout the GPU shader wants, so pass it straight through.
+  if (untrained) {
+    // an unlearned (random) policy — exploratory flailing, the "before training" look
+    for (let i = 0; i < N; i++) {
+      if (steerWander) {
+        steerWander[i] = steerWander[i] * 0.93 + (Math.random() - 0.5) * 0.28;
+        a[i * 3] = Math.max(-1, Math.min(1, steerWander[i]));
+      } else a[i * 3] = Math.random() * 2 - 1;
+      a[i * 3 + 1] = 0.35 + Math.random() * 0.5;
+      a[i * 3 + 2] = Math.random() < 0.06 ? Math.random() * 0.5 : 0;
+    }
+  } else if (useGpu && gpu) {
     const means = await gpu.forwardBatch(w, N);
     for (let i = 0; i < N; i++) {
       a[i * 3] = Math.max(-1, Math.min(1, means[i * 3]));
@@ -125,7 +137,7 @@ async function doStep() {
   }
 
   // 1b) apply per-car driver style (varied lines + corner speeds)
-  if (accelScale && steerWander) {
+  if (!untrained && accelScale && steerWander) {
     for (let i = 0; i < N; i++) {
       steerWander[i] = steerWander[i] * 0.9 + (Math.random() - 0.5) * 0.05;
       a[i * 3] = Math.max(-1, Math.min(1, a[i * 3] + steerWander[i]));
@@ -136,7 +148,7 @@ async function doStep() {
   // 1c) traffic assist: ease off when closing on a car ahead. The policy can't
   //     see other cars, so without this they drive straight through each other;
   //     this makes a trailing car follow instead of ramming.
-  {
+  if (!untrained) {
     const LOOK = 26;
     const LAT = 5.5;
     for (let i = 0; i < N; i++) {
@@ -252,6 +264,9 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       playerAction[0] = msg.steer;
       playerAction[1] = msg.accel;
       playerAction[2] = msg.brake;
+    } else if (msg.type === "setUntrained") {
+      untrained = msg.value;
+      if (env) buildWindow(); // fresh start so the before/after contrast is clear
     } else if (msg.type === "pause") {
       stopLoop();
     } else if (msg.type === "resume") {

@@ -150,6 +150,9 @@ export class LocalSimSource {
   playerInput(steer: number, accel: number, brake: number) {
     this.post({ type: "playerInput", steer, accel, brake });
   }
+  setUntrained(value: boolean) {
+    this.post({ type: "setUntrained", value });
+  }
   stop() {
     this.post({ type: "stop" });
     this.stopped = true;

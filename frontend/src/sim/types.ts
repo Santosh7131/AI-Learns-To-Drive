@@ -24,6 +24,7 @@ export type WorkerIn =
   | { type: "reset" }
   | { type: "setPlayer"; index: number } // -1 = none; else this car is human-driven
   | { type: "playerInput"; steer: number; accel: number; brake: number }
+  | { type: "setUntrained"; value: boolean } // random policy (the "before learning" state)
   | { type: "stop" };
 
 export type WorkerOut =
