@@ -8,7 +8,8 @@ import type { Car, Telemetry } from "@/lib/api";
 import { CarEnv } from "./env";
 import { Policy, clipAction, type PolicyFile } from "./policy";
 import { GpuPolicy } from "./gpuPolicy";
-import type { WorkerIn, WorkerOut, SimTrack, PlaybackMetrics } from "./types";
+import { Trainer, Rollout, DEFAULT_HPARAMS } from "./trainer";
+import type { WorkerIn, WorkerOut, SimTrack, PlaybackMetrics, TrainMetrics } from "./types";
 
 let policy: Policy | null = null;
 let gpu: GpuPolicy | null = null;
@@ -34,6 +35,30 @@ let playerIdx = -1;
 const playerAction = new Float32Array(3);
 // untrained mode: a random policy — what the network looks like before it learns
 let untrained = false;
+
+// -------- live "learn from scratch" mode (real in-browser RL, see trainer.ts) --------
+let learning = false;
+let seed0 = 1;
+let trainer: Trainer | null = null;
+let rollout: Rollout | null = null;
+const HORIZON = 32;       // PPO rollout length before each update
+const LEARN_SUBSTEPS = 3; // env+train steps per rendered frame (gentle time-lapse so learning is brisk)
+let lrObs: Float32Array | null = null; // current obs [N*O]
+let lrRawAct: Float32Array | null = null;
+let lrEnvAct: Float32Array | null = null;
+let lrLogp: Float32Array | null = null;
+let lrVal: Float32Array | null = null;
+let lrRew: Float32Array | null = null;
+let lrLastVal: Float32Array | null = null;
+let epRet: Float64Array | null = null;
+let epLen: Int32Array | null = null;
+let recentRet: number[] = [];
+let trainHistory: number[] = []; // recent avgReturn samples for the UI sparkline
+let updates = 0;
+let envSteps = 0;
+let bestReturn = -Infinity;
+let lastEntropy = 0;
+let lastTrainPost = 0;
 
 // fps measurement (rolling)
 let fpsWindow: number[] = [];
@@ -100,7 +125,108 @@ function frame(): Telemetry {
   return { cars, step: stepCount, status: running ? "running" : "paused" };
 }
 
+// ------------------------------------------------- live "learn from scratch"
+const RING = 200;
+const meanRing = (arr: number[]) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : NaN);
+
+/** (re)build the training env + buffers. resetWeights=true wipes the brain
+ *  (start learning from zero); false keeps it (e.g. when only the fleet resizes). */
+function buildLearn(resetWeights: boolean) {
+  const A = 3;
+  env = new CarEnv(track!, policy!.physics as never, N, seed0 + 1, false); // effects=false → real RL episodes (crash/timeout → reset)
+  if (!trainer) trainer = new Trainer(O, A, 12345);
+  else if (resetWeights) trainer.reset(12345);
+  rollout = new Rollout(HORIZON, N, O, A);
+  lrObs = new Float32Array(N * O); lrObs.set(env.reset());
+  lrRawAct = new Float32Array(N * A);
+  lrEnvAct = new Float32Array(N * A);
+  lrLogp = new Float32Array(N);
+  lrVal = new Float32Array(N);
+  lrRew = new Float32Array(N);
+  lrLastVal = new Float32Array(N);
+  epRet = new Float64Array(N);
+  epLen = new Int32Array(N);
+  recentRet = [];
+  trainHistory = [];
+  updates = 0;
+  envSteps = 0;
+  bestReturn = -Infinity;
+  lastEntropy = 0;
+  stepCount = 0;
+  playerIdx = -1; // learning is its own mode: no human car / scripted assists
+}
+
+/** leave learning and restore the trained-model playground (effects env) */
+function stopLearning() {
+  learning = false;
+  env = new CarEnv(track!, policy!.physics as never, N, seed0, true);
+  buildWindow();
+}
+
+function trainMetrics(): TrainMetrics {
+  const avg = meanRing(recentRet);
+  return {
+    learning,
+    updates,
+    envSteps,
+    avgReturn: Number.isFinite(avg) ? avg : 0,
+    bestReturn: Number.isFinite(bestReturn) ? bestReturn : 0,
+    entropy: lastEntropy,
+    laps: env ? env.totalLaps : 0,
+    history: trainHistory.slice(-60),
+  };
+}
+
+function doLearnStep() {
+  const e = env!, tr = trainer!, ro = rollout!;
+  const A = 3;
+  const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+  for (let sub = 0; sub < LEARN_SUBSTEPS; sub++) {
+    tr.act(lrObs!, N, lrRawAct!, lrLogp!, lrVal!);
+    for (let i = 0; i < N; i++) {
+      lrEnvAct![i * A] = clamp(lrRawAct![i * A], -1, 1);
+      lrEnvAct![i * A + 1] = clamp(lrRawAct![i * A + 1], 0, 1);
+      lrEnvAct![i * A + 2] = clamp(lrRawAct![i * A + 2], 0, 1);
+    }
+    const next = e.step(lrEnvAct!);
+    for (let i = 0; i < N; i++) lrRew![i] = e.lastReward[i];
+    ro.add(lrObs!, lrRawAct!, lrLogp!, lrVal!, lrRew!, e.done);
+    for (let i = 0; i < N; i++) {
+      epRet![i] += lrRew![i];
+      epLen![i]++;
+      if (e.done[i]) {
+        recentRet.push(epRet![i]);
+        if (recentRet.length > RING) recentRet.shift();
+        epRet![i] = 0; epLen![i] = 0;
+      }
+    }
+    lrObs!.set(next);
+    envSteps++;
+    if (ro.full) {
+      for (let i = 0; i < N; i++) lrLastVal![i] = tr.value(lrObs!, i);
+      const b = ro.finish(lrLastVal!, DEFAULT_HPARAMS.gamma, DEFAULT_HPARAMS.lambda);
+      const stats = tr.update(b.obs, b.act, b.logp, b.adv, b.ret, b.S);
+      updates++;
+      lastEntropy = stats.entropy;
+      const avg = meanRing(recentRet);
+      if (Number.isFinite(avg)) {
+        if (avg > bestReturn) bestReturn = avg;
+        trainHistory.push(avg);
+        if (trainHistory.length > 120) trainHistory.shift();
+      }
+    }
+  }
+  stepCount++;
+  post({ type: "frame", telemetry: frame() });
+  const now = performance.now();
+  fpsWindow.push(now);
+  if (fpsWindow.length > 30) fpsWindow.shift();
+  if (now - lastMetrics > 250) { lastMetrics = now; post({ type: "metrics", metrics: metrics() }); }
+  if (now - lastTrainPost > 200) { lastTrainPost = now; post({ type: "train", metrics: trainMetrics() }); }
+}
+
 async function doStep() {
+  if (learning) { doLearnStep(); return; }
   const e = env!;
   const w = window_!;
   const a = actions!;
@@ -226,6 +352,7 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
     if (msg.type === "init") {
       track = msg.trackData;
       N = msg.numEnvs;
+      seed0 = msg.seed;
       stepsPerSec = msg.stepsPerSec;
       const pf = (await fetch(msg.policyUrl).then((r) => r.json())) as PolicyFile;
       policy = new Policy(pf);
@@ -249,14 +376,26 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       if (msg.stepsPerSec != null) stepsPerSec = msg.stepsPerSec;
       if (msg.numEnvs != null && msg.numEnvs !== N && env && policy && track) {
         N = msg.numEnvs;
-        env = new CarEnv(track, policy.physics as never, N, 1, true);
-        buildWindow();
+        if (learning) buildLearn(false); // resize the fleet, keep the brain it's learned so far
+        else { env = new CarEnv(track, policy.physics as never, N, 1, true); buildWindow(); }
       }
     } else if (msg.type === "reset") {
-      if (env) {
+      if (learning && env) {
+        // during learning, "reset" restarts the episodes but keeps the brain
+        lrObs!.set(env.reset());
+        epRet?.fill(0); epLen?.fill(0);
+      } else if (env) {
         env.totalLaps = 0;
         buildWindow(); // re-spawns all cars, clears the observation window + step count
       }
+    } else if (msg.type === "setLearning") {
+      if (msg.value) {
+        if (env && policy && track) { untrained = false; learning = true; buildLearn(true); if (!running) { running = true; loop(); } }
+      } else if (learning) {
+        stopLearning();
+      }
+    } else if (msg.type === "resetBrain") {
+      if (env && policy && track) { untrained = false; learning = true; buildLearn(true); if (!running) { running = true; loop(); } }
     } else if (msg.type === "setPlayer") {
       playerIdx = msg.index;
       playerAction[0] = 0; playerAction[1] = 0; playerAction[2] = 0;
@@ -266,7 +405,8 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       playerAction[2] = msg.brake;
     } else if (msg.type === "setUntrained") {
       untrained = msg.value;
-      if (env) buildWindow(); // fresh start so the before/after contrast is clear
+      if (learning) stopLearning(); // untrained + learning are mutually exclusive
+      else if (env) buildWindow(); // fresh start so the before/after contrast is clear
     } else if (msg.type === "pause") {
       stopLoop();
     } else if (msg.type === "resume") {
@@ -278,6 +418,9 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       stopLoop();
       policy = null;
       env = null;
+      trainer = null;
+      rollout = null;
+      learning = false;
     }
   } catch (err) {
     post({ type: "error", message: String(err instanceof Error ? err.message : err) });

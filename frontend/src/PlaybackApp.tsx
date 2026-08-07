@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Flag, Gauge, Boxes, Play, ArrowDown, FlaskConical } from "lucide-react";
+import { Flag, Gauge, Boxes, Play, ArrowDown, FlaskConical, TrendingUp, Brain } from "lucide-react";
 import { Arena, type HudStatSpec } from "@/components/Arena";
 import { TopNav, REPO_URL } from "@/components/TopNav";
 import { PlaybackControls } from "@/components/PlaybackControls";
@@ -10,7 +10,7 @@ import {
   type SystemScore,
 } from "@/sim/source";
 import { presetFleet, CUSTOM_DEFAULT, STEPS_PER_SEC, type PresetId } from "@/sim/presets";
-import type { PlaybackMetrics, SimTrack } from "@/sim/types";
+import type { PlaybackMetrics, SimTrack, TrainMetrics } from "@/sim/types";
 import type { Telemetry } from "@/lib/api";
 
 interface Props {
@@ -31,6 +31,8 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const [speed, setSpeed] = useState(1);
   const [manual, setManual] = useState(false);
   const [untrained, setUntrained] = useState(false);
+  const [learning, setLearning] = useState(false);
+  const [train, setTrain] = useState<TrainMetrics | null>(null);
   const PLAYER_CAR = 0;
   const telemetryRef = useRef<Telemetry | null>(null);
   const srcRef = useRef<LocalSimSource | null>(null);
@@ -59,6 +61,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             telemetryRef.current = t;
           },
           onMetrics: setPb,
+          onTrain: setTrain,
           onReady: setReady,
           onError: (msg) => {
             console.error("[sim] worker error:", msg);
@@ -109,12 +112,30 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
     srcRef.current?.setRate(STEPS_PER_SEC * n);
   };
   const toggleManual = (v: boolean) => {
+    if (v && learning) { setLearning(false); setTrain(null); srcRef.current?.setLearning(false); }
     setManual(v);
     srcRef.current?.setPlayer(v ? PLAYER_CAR : -1);
   };
   const toggleUntrained = (v: boolean) => {
+    if (v && learning) { setLearning(false); setTrain(null); }
     setUntrained(v);
     srcRef.current?.setUntrained(v);
+  };
+  // live "learn from scratch" mode (real in-browser RL)
+  const LEARN_SPEED = 3; // fast-forward so learning is visible in ~a minute (user can slow down to watch)
+  const toggleLearning = (v: boolean) => {
+    setLearning(v);
+    if (v) { setManual(false); setUntrained(false); if (speed < LEARN_SPEED) changeSpeed(LEARN_SPEED); }
+    else setTrain(null);
+    srcRef.current?.setLearning(v);
+  };
+  const resetBrain = () => {
+    setLearning(true);
+    setManual(false);
+    setUntrained(false);
+    setTrain(null);
+    if (speed < LEARN_SPEED) changeSpeed(LEARN_SPEED);
+    srcRef.current?.resetBrain();
   };
 
   // keyboard control for the human-driven car (advanced mode)
@@ -157,11 +178,17 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const stepsPerSec = pb?.stepsPerSec ?? 0;
   const modelStep = ready?.modelStep ?? pb?.modelStep ?? 0;
 
-  const hud: HudStatSpec[] = [
-    { icon: <Flag className="h-3 w-3" />, label: "Laps", value: String(pb?.totalLaps ?? 0) },
-    { icon: <Gauge className="h-3 w-3" />, label: "Steps/s", value: stepsPerSec.toFixed(0), accent: true },
-    { icon: <Boxes className="h-3 w-3" />, label: "Cars", value: String(fleet) },
-  ];
+  const hud: HudStatSpec[] = learning
+    ? [
+        { icon: <Brain className="h-3 w-3" />, label: "Learning", value: `${train?.updates ?? 0} upd` },
+        { icon: <TrendingUp className="h-3 w-3" />, label: "Avg reward", value: (train?.avgReturn ?? 0).toFixed(1), accent: true },
+        { icon: <Boxes className="h-3 w-3" />, label: "Cars", value: String(fleet) },
+      ]
+    : [
+        { icon: <Flag className="h-3 w-3" />, label: "Laps", value: String(pb?.totalLaps ?? 0) },
+        { icon: <Gauge className="h-3 w-3" />, label: "Steps/s", value: stepsPerSec.toFixed(0), accent: true },
+        { icon: <Boxes className="h-3 w-3" />, label: "Cars", value: String(fleet) },
+      ];
 
   const controls = (
     <PlaybackControls
@@ -179,6 +206,10 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
       onManual={toggleManual}
       untrained={untrained}
       onUntrained={toggleUntrained}
+      learning={learning}
+      onLearning={toggleLearning}
+      onResetBrain={resetBrain}
+      train={train}
       score={score}
       device={device}
       stepsPerSec={stepsPerSec}
@@ -300,7 +331,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
               },
               {
                 title: "The trained driver you see here",
-                body: "Once training converges, the finished network is frozen and re-implemented to run this page. Every car above is that same trained policy — validated to reproduce the original model's decisions to five decimal places. It is playing back what it learned, not learning live.",
+                body: "Once training converges, the finished network is frozen and re-implemented to run this page. Every car above is that same trained policy — validated to reproduce the original model's decisions to five decimal places. Want to see the learning itself? Open the controls' Advanced panel and pick “Train a new brain” — a blank network learns to drive from scratch, live in your browser, with its reward climbing as you watch.",
               },
             ].map((s, i) => (
               <li key={s.title} className="flex gap-4 sm:gap-6">

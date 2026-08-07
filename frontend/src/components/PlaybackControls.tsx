@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Play, Pause, RotateCcw, Cpu, Zap, ChevronDown, Gamepad2, FlaskConical } from "lucide-react";
+import { Play, Pause, RotateCcw, Cpu, Zap, ChevronDown, Gamepad2, FlaskConical, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { PRESETS, CUSTOM_MIN, CUSTOM_MAX, type PresetId } from "@/sim/presets";
 import type { SystemScore } from "@/sim/source";
+import type { TrainMetrics } from "@/sim/types";
 
 interface Props {
   preset: PresetId;
@@ -21,6 +22,10 @@ interface Props {
   onManual: (v: boolean) => void;
   untrained: boolean;
   onUntrained: (v: boolean) => void;
+  learning: boolean;
+  onLearning: (v: boolean) => void;
+  onResetBrain: () => void;
+  train: TrainMetrics | null;
   score: SystemScore | null;
   device: string;
   stepsPerSec: number;
@@ -31,6 +36,45 @@ interface Props {
 function Label({ children }: { children: React.ReactNode }) {
   return <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{children}</div>;
 }
+
+function MiniStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-lg border bg-secondary/40 p-2.5">
+      <Label>{label}</Label>
+      <div className={`num mt-0.5 text-sm font-semibold ${accent ? "text-brand" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+/** tiny reward-over-time sparkline (render-only) */
+function Sparkline({ data }: { data: number[] }) {
+  const W = 280, H = 46;
+  if (data.length < 2) {
+    return (
+      <div className="flex h-[46px] items-center justify-center rounded-md border bg-secondary/40 text-[11px] text-muted-foreground">
+        gathering experience…
+      </div>
+    );
+  }
+  const min = Math.min(...data), max = Math.max(...data);
+  const span = max - min || 1;
+  const pts = data
+    .map((v, i) => `${(i / (data.length - 1)) * W},${H - 5 - ((v - min) / span) * (H - 10)}`)
+    .join(" ");
+  const zeroY = min < 0 && max > 0 ? H - 5 - ((0 - min) / span) * (H - 10) : null;
+  return (
+    <div className="rounded-md border bg-secondary/40 p-1.5 text-brand">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[46px] w-full">
+        {zeroY != null && (
+          <line x1={0} y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth={1} strokeDasharray="3 3" opacity={0.25} vectorEffect="non-scaling-stroke" />
+        )}
+        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
+
+const fmt1 = (v: number | null | undefined) => (v == null ? "—" : v.toFixed(1));
 
 export function PlaybackControls({
   preset,
@@ -47,6 +91,10 @@ export function PlaybackControls({
   onManual,
   untrained,
   onUntrained,
+  learning,
+  onLearning,
+  onResetBrain,
+  train,
   score,
   device,
   stepsPerSec,
@@ -170,6 +218,44 @@ export function PlaybackControls({
           </button>
           {advanced && (
             <div className="mt-3 space-y-3">
+              {/* learn from scratch — real in-browser reinforcement learning */}
+              <div className={`rounded-lg border ${learning ? "border-brand bg-brand/5" : ""}`}>
+                <button onClick={() => onLearning(!learning)} className="flex w-full items-center gap-2.5 p-3 text-left">
+                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${learning ? "bg-brand/10 text-brand" : "bg-muted text-muted-foreground"}`}>
+                    <Brain className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">Train a new brain (live)</div>
+                    <div className="text-[11px] leading-snug text-muted-foreground">
+                      {learning
+                        ? "A blank network is learning to drive right now — reward should climb."
+                        : "Wipe the brain to zero and watch a car learn to drive from scratch, live."}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${learning ? "border-brand/40 text-brand" : "text-muted-foreground"}`}>
+                    {learning ? "ON" : "OFF"}
+                  </span>
+                </button>
+                {learning && (
+                  <div className="space-y-3 px-3 pb-3">
+                    <Sparkline data={train?.history ?? []} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <MiniStat label="Avg reward" value={fmt1(train?.avgReturn)} accent />
+                      <MiniStat label="Best" value={fmt1(train?.bestReturn)} />
+                      <MiniStat label="Updates" value={String(train?.updates ?? 0)} />
+                      <MiniStat label="Laps" value={String(train?.laps ?? 0)} />
+                    </div>
+                    <Button onClick={onResetBrain} variant="outline" className="w-full">
+                      <RotateCcw /> Reset brain — start from zero
+                    </Button>
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      A small network trained by PPO in your browser — not the shipped Transformer. Raise{" "}
+                      <span className="font-medium text-foreground">Sim speed</span> to fast-forward the learning, or drop it to watch closely.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => onManual(!manual)}
                 className={`flex w-full items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${manual ? "border-brand bg-brand/5" : "hover:bg-accent"}`}

@@ -8,7 +8,7 @@
  */
 import type { Telemetry, TrackOption } from "@/lib/api";
 import { API_BASE } from "@/lib/api";
-import type { PlaybackMetrics, SimTrack, WorkerIn, WorkerOut } from "./types";
+import type { PlaybackMetrics, SimTrack, TrainMetrics, WorkerIn, WorkerOut } from "./types";
 import type { PresetId } from "./presets";
 
 const WEB_BASE = `${import.meta.env.BASE_URL}web/`;
@@ -98,6 +98,7 @@ export interface LocalSimOptions {
   seed?: number;
   onFrame: (t: Telemetry) => void;
   onMetrics: (m: PlaybackMetrics) => void;
+  onTrain?: (m: TrainMetrics) => void;
   onReady?: (info: { device: string; modelStep: number; bestReturn: number }) => void;
   onError?: (msg: string) => void;
 }
@@ -112,6 +113,7 @@ export class LocalSimSource {
       const m = ev.data;
       if (m.type === "frame") opts.onFrame(m.telemetry);
       else if (m.type === "metrics") opts.onMetrics(m.metrics);
+      else if (m.type === "train") opts.onTrain?.(m.metrics);
       else if (m.type === "ready") opts.onReady?.(m);
       else if (m.type === "error") opts.onError?.(m.message);
     };
@@ -152,6 +154,12 @@ export class LocalSimSource {
   }
   setUntrained(value: boolean) {
     this.post({ type: "setUntrained", value });
+  }
+  setLearning(value: boolean) {
+    this.post({ type: "setLearning", value });
+  }
+  resetBrain() {
+    this.post({ type: "resetBrain" });
   }
   stop() {
     this.post({ type: "stop" });
