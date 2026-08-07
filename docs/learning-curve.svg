@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" font-family="ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif" role="img" aria-label="Mean episode reward climbing from about minus five to plus forty-seven as an AI learns to drive from scratch">
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="760" height="380" rx="16" fill="#0b0f17"/>
+  <text x="64" y="30" fill="#f3f4f6" font-size="19" font-weight="700">An AI teaching itself to drive</text>
+  <text x="64" y="50" fill="#93a1b3" font-size="13">Mean reward as a blank network learns from scratch — no rules, just trial and error</text>
+  <line x1="64" y1="316.4" x2="732" y2="316.4" stroke="#1e2633" stroke-width="1"/><text x="54" y="320.4" fill="#7c8798" font-size="12" text-anchor="end">-15</text><line x1="64" y1="258.6" x2="732" y2="258.6" stroke="#1e2633" stroke-width="1"/><text x="54" y="262.6" fill="#7c8798" font-size="12" text-anchor="end">0</text><line x1="64" y1="200.9" x2="732" y2="200.9" stroke="#1e2633" stroke-width="1"/><text x="54" y="204.9" fill="#7c8798" font-size="12" text-anchor="end">15</text><line x1="64" y1="143.1" x2="732" y2="143.1" stroke="#1e2633" stroke-width="1"/><text x="54" y="147.1" fill="#7c8798" font-size="12" text-anchor="end">30</text><line x1="64" y1="85.3" x2="732" y2="85.3" stroke="#1e2633" stroke-width="1"/><text x="54" y="89.3" fill="#7c8798" font-size="12" text-anchor="end">45</text>
+  <line x1="64" y1="258.6" x2="732" y2="258.6" stroke="#3a4658" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <path d="M84.0,258.6 L84.0,277.4 L104.1,277.4 L124.1,293.0 L144.2,315.9 L164.2,315.9 L184.2,316.9 L204.3,320.8 L224.3,319.2 L244.4,318.8 L264.4,309.6 L284.4,294.5 L304.5,290.9 L324.5,283.9 L344.6,272.5 L364.6,263.6 L384.6,252.7 L404.7,243.2 L424.7,237.3 L444.8,227.4 L464.8,218.5 L484.8,205.0 L504.9,195.4 L524.9,182.7 L545.0,164.8 L565.0,151.1 L585.0,146.5 L605.1,136.2 L625.1,117.8 L645.2,116.5 L665.2,106.1 L685.2,89.9 L705.3,85.4 L725.3,77.8 L725.3,258.6 Z" fill="url(#fill)"/>
+  <path d="M84.0,277.4 L104.1,277.4 L124.1,293.0 L144.2,315.9 L164.2,315.9 L184.2,316.9 L204.3,320.8 L224.3,319.2 L244.4,318.8 L264.4,309.6 L284.4,294.5 L304.5,290.9 L324.5,283.9 L344.6,272.5 L364.6,263.6 L384.6,252.7 L404.7,243.2 L424.7,237.3 L444.8,227.4 L464.8,218.5 L484.8,205.0 L504.9,195.4 L524.9,182.7 L545.0,164.8 L565.0,151.1 L585.0,146.5 L605.1,136.2 L625.1,117.8 L645.2,116.5 L665.2,106.1 L685.2,89.9 L705.3,85.4 L725.3,77.8" fill="none" stroke="#3b82f6" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="84.0" cy="277.4" r="3.5" fill="#93a1b3"/>
+  <circle cx="725.3" cy="77.8" r="4.5" fill="#3b82f6" stroke="#0b0f17" stroke-width="2"/>
+  <text x="717.3" y="81.8" fill="#dbeafe" font-size="13" font-weight="700" text-anchor="end">drives itself</text>
+  <text x="204.3" y="340.8" fill="#7c8798" font-size="12" text-anchor="middle">keeps crashing</text>
+  <text x="64" y="360" fill="#7c8798" font-size="12" text-anchor="start" opacity="0">.</text>
+  <text x="64.0" y="360" fill="#7c8798" font-size="12" text-anchor="middle">0</text><text x="231.0" y="360" fill="#7c8798" font-size="12" text-anchor="middle">4k</text><text x="398.0" y="360" fill="#7c8798" font-size="12" text-anchor="middle">8k</text><text x="565.0" y="360" fill="#7c8798" font-size="12" text-anchor="middle">12k</text><text x="732.0" y="360" fill="#7c8798" font-size="12" text-anchor="middle">16k</text>
+  <text x="398.0" y="376" fill="#5c6675" font-size="11" text-anchor="middle">training steps</text>
+</svg>
