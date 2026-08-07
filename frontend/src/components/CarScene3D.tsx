@@ -25,8 +25,9 @@ interface Props {
   showRacingLine?: boolean; // render-only ideal line (cars never observe it)
 }
 
-const TRACK_LIFT = 0.45; // track surface above terrain
-const CAR_LIFT = 0.5; // ride height so the wheels sit planted on the track surface
+const TRACK_LIFT = 0.45; // flat track surface height
+const CAR_LIFT = 0.5; // detailed-car ride height so the wheels sit planted on the road
+const INSTANCED_LIFT = TRACK_LIFT + 0.6; // simple body box rests its floor on the road
 
 function carColor(id: number, total = 20) {
   return new THREE.Color(carColorCss(id, total));
@@ -50,56 +51,40 @@ function Terrain({ track }: { track: TrackGeometry }) {
 
     // centerline as flat arrays for a fast nearest-point search
     const cl = track.centerline;
-    const elev = track.elevation;
     const M = cl.length;
     const clx = new Float64Array(M);
     const clz = new Float64Array(M);
-    const naturalAtCl = new Float64Array(M);
     for (let k = 0; k < M; k++) {
       clx[k] = cl[k][0];
       clz[k] = cl[k][1];
-      naturalAtCl[k] = terrainHeight(terrain, cl[k][0], cl[k][1]);
     }
     const hw = track.halfWidth;
     const cell = size / seg;                 // terrain grid cell size
     const flatR = hw + Math.max(10, cell * 1.6); // fully-flat apron radius (covers grid coarseness)
-    const shoulder = hw * 1.0;               // graded grass verge beyond the apron
+    const shoulder = hw * 2.4;               // long, gentle verge out to the hills
     const reach = flatR + shoulder;
     const reach2 = reach * reach;
+    const footprint = TRACK_LIFT - 0.12;     // flat grass, just below the flat road
 
-    // Carve the terrain to the road: flatten to just below the road surface
-    // inside the track footprint, then ramp smoothly out to natural grass — so
-    // the green never poked up through the asphalt. Bridge spans are left alone.
+    // The road is flat, so flatten the grass around it to road level and ramp
+    // smoothly out to the natural rolling hills further away. No per-point road
+    // elevation, so nothing can poke through and there are no seams.
     for (let i = 0; i < pos.count; i++) {
       const wx = pos.getX(i) + cx;
       const wz = pos.getZ(i) + cz;
       const natural = terrainHeight(terrain, wx, wz) - 0.15;
-
-      const flatR2 = flatR * flatR;
       let best = Infinity;
-      let bk = 0;
-      let minRoad = Infinity;   // lowest road surface among ALL nearby sections
-      let bridgeOnly = true;    // every nearby section here is a flyover span
       for (let k = 0; k < M; k++) {
         const dx = wx - clx[k];
         const dz = wz - clz[k];
         const d2 = dx * dx + dz * dz;
-        if (d2 < best) { best = d2; bk = k; }
-        if (d2 < flatR2) {
-          const isBridgeK = elev[k] - naturalAtCl[k] > 2.0;
-          if (!isBridgeK) {
-            bridgeOnly = false;
-            if (elev[k] < minRoad) minRoad = elev[k]; // carve below the lowest road
-          }
-        }
+        if (d2 < best) best = d2;
       }
-      if (best > reach2 || bridgeOnly) {
-        pos.setY(i, natural); // open ground / under a bridge span
+      if (best > reach2) {
+        pos.setY(i, natural);
         continue;
       }
       const d = Math.sqrt(best);
-      const road = (minRoad === Infinity ? elev[bk] : minRoad) + TRACK_LIFT;
-      const footprint = road - 1.0; // flat apron, safely below every nearby road
       let h;
       if (d <= flatR) {
         h = footprint;
@@ -129,23 +114,22 @@ function Terrain({ track }: { track: TrackGeometry }) {
 }
 
 // ---------------------------------------------------------------- track mesh
-function norm2(x: number, y: number): [number, number] {
-  const L = Math.hypot(x, y) || 1;
-  return [x / L, y / L];
-}
-
+// The road is rendered FLAT (constant Y). Elevation drove two whole classes of
+// bug — edge/curb geometry spiking into triangles at sharp corners, and the car
+// grounding at the coarse physics height while the mesh used the smoothed one,
+// so cars sank into slopes. A flat surface removes both, permanently.
 function TrackMesh({ track }: { track: TrackGeometry }) {
-  const { geometry, kerbGeom, left, right, centerLine } = useMemo(() => {
+  const { geometry, left, right, centerLine } = useMemo(() => {
     const hw = track.halfWidth;
     // resample to a smooth, dense curve for rendering (physics keeps coarse pts)
-    const { pts, elev } = resampleClosed(track.centerline as Pt[], track.elevation, 6);
+    const { pts } = resampleClosed(track.centerline as Pt[], track.elevation, 6);
     const M = pts.length;
     const { left: eL, right: eR } = computeTrackEdges(pts, hw);
-    const yAt = (i: number) => elev[i] + TRACK_LIFT;
-    const left: [number, number, number][] = eL.map(([x, y], i) => [x, yAt(i), y]);
-    const right: [number, number, number][] = eR.map(([x, y], i) => [x, yAt(i), y]);
+    const Y = TRACK_LIFT; // one flat plane — no per-vertex elevation
+    const left: [number, number, number][] = eL.map(([x, y]) => [x, Y, y]);
+    const right: [number, number, number][] = eR.map(([x, y]) => [x, Y, y]);
 
-    // ---- asphalt ribbon ----
+    // ---- asphalt ribbon (flat) ----
     const positions: number[] = [];
     const idx: number[] = [];
     for (let i = 0; i < M; i++) {
@@ -161,70 +145,29 @@ function TrackMesh({ track }: { track: TrackGeometry }) {
     g.setIndex(idx);
     g.computeVertexNormals();
 
-    // ---- continuous red/white curb ribbon along both edges ----
-    const kerbW = Math.min(3.2, hw * 0.12);
-    const stripeLen = Math.max(3, Math.round(M / 160)); // segments per colour block
-    const kp: number[] = [];
-    const kc: number[] = [];
-    const ki: number[] = [];
-    let v = 0;
-    const addKerb = (edge: [number, number, number][]) => {
-      for (let i = 0; i < M; i++) {
-        const i2 = (i + 1) % M;
-        // outward normal = (edge - centerline), normalized
-        const oA = norm2(edge[i][0] - pts[i][0], edge[i][2] - pts[i][1]);
-        const oB = norm2(edge[i2][0] - pts[i2][0], edge[i2][2] - pts[i2][1]);
-        const yA = edge[i][1] + 0.05;
-        const yB = edge[i2][1] + 0.05;
-        kp.push(edge[i][0], yA, edge[i][2]);
-        kp.push(edge[i][0] + oA[0] * kerbW, yA, edge[i][2] + oA[1] * kerbW);
-        kp.push(edge[i2][0], yB, edge[i2][2]);
-        kp.push(edge[i2][0] + oB[0] * kerbW, yB, edge[i2][2] + oB[1] * kerbW);
-        const red = Math.floor(i / stripeLen) % 2 === 0;
-        const col = red ? [0.78, 0.12, 0.13] : [0.93, 0.93, 0.95];
-        for (let k = 0; k < 4; k++) kc.push(col[0], col[1], col[2]);
-        ki.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
-        v += 4;
-      }
-    };
-    addKerb(left);
-    addKerb(right);
-    let kerbGeom: THREE.BufferGeometry | null = null;
-    if (kp.length) {
-      kerbGeom = new THREE.BufferGeometry();
-      kerbGeom.setAttribute("position", new THREE.Float32BufferAttribute(kp, 3));
-      kerbGeom.setAttribute("color", new THREE.Float32BufferAttribute(kc, 3));
-      kerbGeom.setIndex(ki);
-      kerbGeom.computeVertexNormals();
-    }
-
-    const centerLine: [number, number, number][] = pts.map(
-      ([x, y], i) => [x, elev[i] + TRACK_LIFT + 0.05, y]
-    );
+    const centerLine: [number, number, number][] = pts.map(([x, y]) => [x, Y + 0.04, y]);
     left.push(left[0]);
     right.push(right[0]);
-    return { geometry: g, kerbGeom, left, right, centerLine };
+    return { geometry: g, left, right, centerLine };
   }, [track]);
 
-  useEffect(() => () => {
-    geometry.dispose();
-    kerbGeom?.dispose();
-  }, [geometry, kerbGeom]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
   const startLine = useMemo<[number, number, number][]>(() => [left[0], right[0]], [left, right]);
 
+  // Kerbs = a solid white edge line with a red DASHED line laid over it, so the
+  // red dashes + white gaps read as an alternating red/white kerb. Pure lines
+  // that follow the edge exactly — no offset geometry, so nothing can fold into
+  // the triangle spikes we had before. Mirrors the 2D renderer's curb.
   return (
     <group>
       <mesh geometry={geometry} receiveShadow castShadow>
         <meshStandardMaterial color="#26272c" roughness={0.97} metalness={0} side={THREE.DoubleSide} />
       </mesh>
-      {kerbGeom && (
-        <mesh geometry={kerbGeom} receiveShadow>
-          <meshStandardMaterial vertexColors roughness={0.55} metalness={0.0} side={THREE.DoubleSide} />
-        </mesh>
-      )}
-      <Line points={left} color="#f4f4f7" lineWidth={2.5} transparent opacity={0.95} />
-      <Line points={right} color="#f4f4f7" lineWidth={2.5} transparent opacity={0.95} />
+      <Line points={left} color="#eef0f4" lineWidth={4} />
+      <Line points={right} color="#eef0f4" lineWidth={4} />
+      <Line points={left} color="#c81e1e" lineWidth={4} dashed dashSize={5} gapSize={5} />
+      <Line points={right} color="#c81e1e" lineWidth={4} dashed dashSize={5} gapSize={5} />
       <Line points={centerLine} color="#f4d03f" lineWidth={1.4} dashed dashSize={7} gapSize={10} transparent opacity={0.55} />
       <Line points={startLine} color="#ffffff" lineWidth={6} />
     </group>
@@ -386,8 +329,8 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
 
-      // vertical suspension spring: subtle travel, small hops on real crests
-      const groundY = r.z + CAR_LIFT;
+      // vertical suspension spring: subtle travel that settles onto the flat road
+      const groundY = CAR_LIFT;
       if (r.ry > groundY + 0.2) {
         r.rvy -= 30 * delta; // airborne — gentle gravity
       } else {
@@ -404,11 +347,10 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
       o.position.set(r.x, r.ry, r.y);
       o.rotation.y = -r.theta;
 
-      // tilt the body to the track slope (grade), driving forces + air
+      // flat road: pitch comes only from throttle/brake weight transfer, roll from steering
       const targetPitch =
-        Math.atan(t.grade ?? 0) +
         ((t.accel ?? 0) - (t.brake ?? 0)) * 0.05 -
-        Math.max(-0.16, Math.min(0.16, r.rvy * 0.012));
+        Math.max(-0.1, Math.min(0.1, r.rvy * 0.012));
       const targetRoll = -(t.steer ?? 0) * 0.18;
       r.pitch += (targetPitch - r.pitch) * tilt;
       r.roll += (targetRoll - r.roll) * tilt;
@@ -478,7 +420,7 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
     const cars = tele.cars;
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
-      state.current = cars.map((c) => ({ x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, ry: (c.z ?? 0) + CAR_LIFT, rvy: 0, init: true }));
+      state.current = cars.map((c) => ({ x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, ry: INSTANCED_LIFT, rvy: 0, init: true }));
     }
     const corr = 1 - Math.exp(-7 * delta);
     const n = Math.min(numCars, cars.length);
@@ -492,14 +434,14 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
       const tz = t.z ?? 0;
       if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 5) {
         r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta;
-        r.ry = tz + CAR_LIFT; r.rvy = 0; r.init = false;
+        r.ry = INSTANCED_LIFT; r.rvy = 0; r.init = false;
       } else {
         r.x += r.vx * delta; r.y += r.vy * delta;
         r.x += (t.x - r.x) * corr; r.y += (t.y - r.y) * corr; r.z += (tz - r.z) * corr;
         r.vx += (tvx - r.vx) * corr; r.vy += (tvy - r.vy) * corr;
         r.theta = lerpAngle(r.theta, t.theta, corr);
       }
-      const groundY = r.z + CAR_LIFT;
+      const groundY = INSTANCED_LIFT;
       if (r.ry > groundY + 0.2) r.rvy -= 30 * delta;
       else { r.rvy += (groundY - r.ry) * 80 * delta; r.rvy *= Math.exp(-13 * delta); }
       r.ry += r.rvy * delta;
@@ -569,7 +511,7 @@ function CameraRig({
     const dt = Math.min(rawDelta, 0.05);
     const fx = Math.cos(c.theta);
     const fz = Math.sin(c.theta);
-    const h = c.z ?? 0; // follow the smoothed ground height, not the bouncing car
+    const h = TRACK_LIFT; // flat road — constant camera height, no terrain jitter
     desired.current.set(c.x - fx * 30, h + 13, c.y - fz * 30);
     target.current.set(c.x + fx * 9, h + 2.5, c.y + fz * 9); // look slightly ahead
     if (!inited.current) {
@@ -607,8 +549,7 @@ function SensorRays({
       return;
     }
     seg.visible = true;
-    const cz = c.z ?? 0;
-    const h0 = cz + 1.4;
+    const h0 = TRACK_LIFT + 1.4; // flat road
     const n = Math.min(track.numRays, c.sensors.length);
     for (let j = 0; j < track.numRays; j++) {
       const s = j < n ? c.sensors[j] : 0;
@@ -620,7 +561,7 @@ function SensorRays({
       positions[j * 6 + 1] = h0;
       positions[j * 6 + 2] = c.y;
       positions[j * 6 + 3] = ex;
-      positions[j * 6 + 4] = cz + 1.0;
+      positions[j * 6 + 4] = TRACK_LIFT + 1.0;
       positions[j * 6 + 5] = ez;
     }
     const attr = seg.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -651,8 +592,7 @@ export function CarScene3D({ track, telemetryRef, selectedId, onSelect, chase, n
   // ideal racing line (render-only; the cars never observe it)
   const racePts = useMemo<[number, number, number][]>(() => {
     const rl = racingLine(track.centerline as Pt[], track.halfWidth);
-    const elev = track.elevation;
-    const pts = rl.map(([x, y], i) => [x, elev[i] + TRACK_LIFT + 0.14, y] as [number, number, number]);
+    const pts = rl.map(([x, y]) => [x, TRACK_LIFT + 0.06, y] as [number, number, number]);
     pts.push(pts[0]);
     return pts;
   }, [track]);
