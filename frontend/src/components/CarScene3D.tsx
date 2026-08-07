@@ -273,9 +273,10 @@ function CarMesh({ color, selected }: { color: THREE.Color; selected: boolean })
 interface RState {
   x: number;
   y: number;
-  z: number;
-  vx: number;
-  vy: number;
+  svx: number; // measured on-screen velocity (world units/sec) — sim-speed independent
+  svy: number;
+  ltx: number; // last authoritative (truth) position, used to measure svx
+  lty: number;
   theta: number;
   roll: number;
   pitch: number;
@@ -287,6 +288,7 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
   const outer = useRef<(THREE.Group | null)[]>([]);
   const inner = useRef<(THREE.Group | null)[]>([]);
   const state = useRef<RState[]>([]);
+  const fm = useRef({ step: -1, time: 0 }); // last telemetry frame seen + when (for velocity from truth deltas)
 
   useFrame((_, rawDelta) => {
     const tele = telemetryRef.current;
@@ -295,11 +297,21 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
       state.current = cars.map((c) => ({
-        x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, roll: 0, pitch: 0,
-        ry: (c.z ?? 0) + CAR_LIFT, rvy: 0, init: true,
+        x: c.x, y: c.y, svx: 0, svy: 0, ltx: c.x, lty: c.y, theta: c.theta, roll: 0, pitch: 0,
+        ry: CAR_LIFT, rvy: 0, init: true,
       }));
     }
-    const corr = 1 - Math.exp(-7 * delta); // position/heading correction toward truth
+    // A new telemetry frame arrives every sim step; at high sim-speed many steps
+    // pass per rendered frame. Measure each car's REAL on-screen speed from how
+    // far the truth moved per wall-second, then chase a predicted current
+    // position. This tracks correctly at any sim-speed (no more corner-cutting
+    // across the infield at 8x), and degrades gracefully if the CPU can't keep up.
+    const now = performance.now();
+    const isNew = tele.step !== fm.current.step;
+    const dtWall = isNew ? Math.max(0.004, (now - fm.current.time) / 1000) : 0;
+    if (isNew) { fm.current.step = tele.step; fm.current.time = now; }
+    const age = Math.min(0.2, (now - fm.current.time) / 1000); // time since that frame (for prediction)
+    const corr = 1 - Math.exp(-14 * delta); // reconcile toward the predicted truth
     const tilt = 1 - Math.exp(-6 * delta); // body roll/pitch smoothing
 
     for (let i = 0; i < cars.length; i++) {
@@ -309,25 +321,26 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
       const t = cars[i];
       if (!o || !r) continue;
 
-      const tvx = t.v * Math.cos(t.theta);
-      const tvy = t.v * Math.sin(t.theta);
-      const tz = t.z ?? 0;
-
-      if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 5) {
-        // first frame or a respawn teleport: snap
-        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta;
-        r.ry = tz + CAR_LIFT; r.rvy = 0; r.init = false;
-      } else {
-        // predict forward by velocity, then gently correct toward authoritative state
-        r.x += r.vx * delta;
-        r.y += r.vy * delta;
-        r.x += (t.x - r.x) * corr;
-        r.y += (t.y - r.y) * corr;
-        r.z += (tz - r.z) * corr;
-        r.vx += (tvx - r.vx) * corr;
-        r.vy += (tvy - r.vy) * corr;
-        r.theta = lerpAngle(r.theta, t.theta, corr);
+      if (isNew) {
+        const jump = Math.hypot(t.x - r.ltx, t.y - r.lty);
+        if (r.init || jump > track.halfWidth * 4) {
+          // first frame or a respawn teleport: snap, drop any carried velocity
+          r.x = t.x; r.y = t.y; r.theta = t.theta; r.svx = 0; r.svy = 0;
+          r.ry = CAR_LIFT; r.rvy = 0; r.init = false;
+        } else {
+          const nvx = (t.x - r.ltx) / dtWall;
+          const nvy = (t.y - r.lty) / dtWall;
+          r.svx += (nvx - r.svx) * 0.5; // mild smoothing of the measurement
+          r.svy += (nvy - r.svy) * 0.5;
+        }
+        r.ltx = t.x; r.lty = t.y;
       }
+      // follow the predicted current position (truth + measured velocity * age)
+      const predX = t.x + r.svx * age;
+      const predY = t.y + r.svy * age;
+      r.x += (predX - r.x) * corr;
+      r.y += (predY - r.y) * corr;
+      r.theta = lerpAngle(r.theta, t.theta, corr);
 
       // vertical suspension spring: subtle travel that settles onto the flat road
       const groundY = CAR_LIFT;
@@ -385,12 +398,13 @@ function Cars({ telemetryRef, track, selectedId, onSelect, numCars = 20 }: Omit<
 // ------------------------------------------------- instanced cars (big fleets)
 // For hundreds–thousands of cars, one InstancedMesh (2 draw calls) replaces the
 // per-car detailed groups. Same velocity-extrapolation smoothing as Cars.
-interface ISt { x: number; y: number; z: number; vx: number; vy: number; theta: number; ry: number; rvy: number; init: boolean }
+interface ISt { x: number; y: number; svx: number; svy: number; ltx: number; lty: number; theta: number; ry: number; rvy: number; init: boolean }
 
 function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20 }: Omit<Props, "chase">) {
   const bodyRef = useRef<THREE.InstancedMesh>(null);
   const cabinRef = useRef<THREE.InstancedMesh>(null);
   const state = useRef<ISt[]>([]);
+  const fm = useRef({ step: -1, time: 0 });
   const off = useRef<Uint8Array>(new Uint8Array(0));
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const grey = useMemo(() => new THREE.Color("#5b606b"), []);
@@ -420,27 +434,38 @@ function InstancedCars({ track, telemetryRef, selectedId, onSelect, numCars = 20
     const cars = tele.cars;
     const delta = Math.min(rawDelta, 0.05);
     if (state.current.length !== cars.length) {
-      state.current = cars.map((c) => ({ x: c.x, y: c.y, z: c.z ?? 0, vx: 0, vy: 0, theta: c.theta, ry: INSTANCED_LIFT, rvy: 0, init: true }));
+      state.current = cars.map((c) => ({ x: c.x, y: c.y, svx: 0, svy: 0, ltx: c.x, lty: c.y, theta: c.theta, ry: INSTANCED_LIFT, rvy: 0, init: true }));
     }
-    const corr = 1 - Math.exp(-7 * delta);
+    // measure real on-screen velocity from truth deltas (see Cars) so cars track
+    // correctly at any sim-speed instead of cutting across the infield at 8x.
+    const now = performance.now();
+    const isNew = tele.step !== fm.current.step;
+    const dtWall = isNew ? Math.max(0.004, (now - fm.current.time) / 1000) : 0;
+    if (isNew) { fm.current.step = tele.step; fm.current.time = now; }
+    const age = Math.min(0.2, (now - fm.current.time) / 1000);
+    const corr = 1 - Math.exp(-14 * delta);
     const n = Math.min(numCars, cars.length);
     let colorDirty = false;
     for (let i = 0; i < n; i++) {
       const r = state.current[i];
       const t = cars[i];
       if (!r) continue;
-      const tvx = t.v * Math.cos(t.theta);
-      const tvy = t.v * Math.sin(t.theta);
-      const tz = t.z ?? 0;
-      if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 5) {
-        r.x = t.x; r.y = t.y; r.z = tz; r.vx = tvx; r.vy = tvy; r.theta = t.theta;
-        r.ry = INSTANCED_LIFT; r.rvy = 0; r.init = false;
-      } else {
-        r.x += r.vx * delta; r.y += r.vy * delta;
-        r.x += (t.x - r.x) * corr; r.y += (t.y - r.y) * corr; r.z += (tz - r.z) * corr;
-        r.vx += (tvx - r.vx) * corr; r.vy += (tvy - r.vy) * corr;
-        r.theta = lerpAngle(r.theta, t.theta, corr);
+      if (isNew) {
+        const jump = Math.hypot(t.x - r.ltx, t.y - r.lty);
+        if (r.init || jump > track.halfWidth * 4) {
+          r.x = t.x; r.y = t.y; r.theta = t.theta; r.svx = 0; r.svy = 0;
+          r.ry = INSTANCED_LIFT; r.rvy = 0; r.init = false;
+        } else {
+          r.svx += ((t.x - r.ltx) / dtWall - r.svx) * 0.5;
+          r.svy += ((t.y - r.lty) / dtWall - r.svy) * 0.5;
+        }
+        r.ltx = t.x; r.lty = t.y;
       }
+      const predX = t.x + r.svx * age;
+      const predY = t.y + r.svy * age;
+      r.x += (predX - r.x) * corr;
+      r.y += (predY - r.y) * corr;
+      r.theta = lerpAngle(r.theta, t.theta, corr);
       const groundY = INSTANCED_LIFT;
       if (r.ry > groundY + 0.2) r.rvy -= 30 * delta;
       else { r.rvy += (groundY - r.ry) * 80 * delta; r.rvy *= Math.exp(-13 * delta); }

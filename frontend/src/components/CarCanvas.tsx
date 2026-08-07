@@ -15,8 +15,10 @@ interface Props {
 interface RenderCar {
   x: number;
   y: number;
-  vx: number;
-  vy: number;
+  svx: number; // measured on-screen velocity (world units/sec) — sim-speed independent
+  svy: number;
+  ltx: number; // last authoritative (truth) position
+  lty: number;
   theta: number;
   v: number;
   offtrack: boolean;
@@ -200,6 +202,8 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
     const racePts = racingLine(pts as Pt[], hw); // ideal line (render-only)
 
     let lastT = performance.now();
+    let frameStep = -1;              // last telemetry step ingested
+    let frameTime = performance.now(); // wall-clock when it arrived (for velocity from truth deltas)
     const draw = (now: number) => {
       const delta = Math.min((now - lastT) / 1000, 0.05);
       lastT = now;
@@ -351,29 +355,37 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
         const target = tele.cars;
         if (rendered.current.length !== target.length) {
           rendered.current = target.map((c) => ({
-            x: c.x, y: c.y, vx: 0, vy: 0, theta: c.theta, v: c.v, offtrack: c.offtrack, init: true,
+            x: c.x, y: c.y, svx: 0, svy: 0, ltx: c.x, lty: c.y, theta: c.theta, v: c.v, offtrack: c.offtrack, init: true,
           }));
           trails.current = target.map(() => []);
         }
-        const corr = 1 - Math.exp(-7 * delta);
+        // Measure each car's REAL on-screen speed from how far the truth moved per
+        // wall-second, then chase a predicted current position. Tracks correctly
+        // at any sim-speed (no infield corner-cutting at 8x) and if the CPU lags.
+        const isNew = tele.step !== frameStep;
+        const dtWall = isNew ? Math.max(0.004, (now - frameTime) / 1000) : 0;
+        if (isNew) { frameStep = tele.step; frameTime = now; }
+        const age = Math.min(0.2, (now - frameTime) / 1000);
+        const corr = 1 - Math.exp(-14 * delta);
         for (let i = 0; i < target.length; i++) {
           const r = rendered.current[i];
           const t = target[i];
-          const tvx = t.v * Math.cos(t.theta);
-          const tvy = t.v * Math.sin(t.theta);
-          if (r.init || Math.hypot(t.x - r.x, t.y - r.y) > track.halfWidth * 4) {
-            r.x = t.x; r.y = t.y; r.vx = tvx; r.vy = tvy; r.theta = t.theta; r.init = false;
-            trails.current[i] = [];
-          } else {
-            // predict forward by velocity, then correct toward the latest state
-            r.x += r.vx * delta;
-            r.y += r.vy * delta;
-            r.x += (t.x - r.x) * corr;
-            r.y += (t.y - r.y) * corr;
-            r.vx += (tvx - r.vx) * corr;
-            r.vy += (tvy - r.vy) * corr;
-            r.theta = lerpAngle(r.theta, t.theta, corr);
+          if (isNew) {
+            const jump = Math.hypot(t.x - r.ltx, t.y - r.lty);
+            if (r.init || jump > track.halfWidth * 4) {
+              r.x = t.x; r.y = t.y; r.theta = t.theta; r.svx = 0; r.svy = 0; r.init = false;
+              trails.current[i] = [];
+            } else {
+              r.svx += ((t.x - r.ltx) / dtWall - r.svx) * 0.5; // mild smoothing
+              r.svy += ((t.y - r.lty) / dtWall - r.svy) * 0.5;
+            }
+            r.ltx = t.x; r.lty = t.y;
           }
+          const predX = t.x + r.svx * age;
+          const predY = t.y + r.svy * age;
+          r.x += (predX - r.x) * corr;
+          r.y += (predY - r.y) * corr;
+          r.theta = lerpAngle(r.theta, t.theta, corr);
           r.v = t.v;
           r.offtrack = t.offtrack;
 
