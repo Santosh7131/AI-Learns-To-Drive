@@ -26,7 +26,7 @@ interface Props {
 }
 
 const TRACK_LIFT = 0.45; // track surface above terrain
-const CAR_LIFT = 0.85; // car sits on (never under) the track surface
+const CAR_LIFT = 0.5; // ride height so the wheels sit planted on the track surface
 
 function carColor(id: number, total = 20) {
   return new THREE.Color(carColorCss(id, total));
