@@ -366,7 +366,6 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
           <div>AI Learns To Drive — a reinforcement-learning project.</div>
           <div className="flex items-center gap-4">
-            <span className="text-xs">React · Three.js · PyTorch · WebGPU</span>
             <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">GitHub</a>
           </div>
         </div>
