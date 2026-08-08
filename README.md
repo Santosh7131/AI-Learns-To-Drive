@@ -1,5 +1,7 @@
 # AI Learns To Drive 🏎️
 
+**▶ [Live demo](https://ai-learns-to-drive.onrender.com)** — watch the trained AI drive, take the wheel yourself, or wipe its brain and watch a new one learn to drive from scratch, live in your browser.
+
 An AI that teaches itself to drive. A **Transformer policy** trained with **reinforcement
 learning (PPO)** discovers how to steer, accelerate and brake around a race track — with no
 hand-coded rules — and the exact trained network then runs **live in the browser**, batched on
