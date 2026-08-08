@@ -343,7 +343,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             {[
               { value: "10", label: "sensor inputs" },
               { value: "3", label: "continuous controls" },
-              { value: modelStep ? modelStep.toLocaleString() : "…", label: "training steps" },
+              { value: modelStep ? (modelStep / 1e6).toFixed(2) + "M" : "…", label: "training steps" },
               { value: "0", label: "hand-coded driving rules" },
             ].map((f) => (
               <div key={f.label} className="bg-card p-4">

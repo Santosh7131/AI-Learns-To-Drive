@@ -202,7 +202,7 @@ export function PlaybackControls({
           <div className="rounded-lg border bg-secondary/40 p-2.5">
             <Label>Model</Label>
             <div className="num mt-0.5 text-sm font-semibold">
-              {(modelStep / 1e6).toFixed(1)}M<span className="ml-1 text-[10px] font-normal text-muted-foreground">steps</span>
+              {(modelStep / 1e6).toFixed(2)}M<span className="ml-1 text-[10px] font-normal text-muted-foreground">steps</span>
             </div>
           </div>
         </div>
