@@ -290,13 +290,6 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             </div>
             <div className={fs ? "scroll-slim overflow-y-auto" : ""}>{controls}</div>
           </div>
-          {!fs && (
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              Every car runs the same policy. Grey cars have gone off-track and are resetting. Click any car to
-              inspect the neural network's live steering / throttle / brake outputs and its lidar view. Drag to
-              orbit, or use the racing-line and fullscreen controls on the scene.
-            </p>
-          )}
         </section>
 
         {/* documentation */}
@@ -350,7 +343,7 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
             {[
               { value: "10", label: "sensor inputs" },
               { value: "3", label: "continuous controls" },
-              { value: "2.4M", label: "training steps" },
+              { value: modelStep ? modelStep.toLocaleString() : "…", label: "training steps" },
               { value: "0", label: "hand-coded driving rules" },
             ].map((f) => (
               <div key={f.label} className="bg-card p-4">
