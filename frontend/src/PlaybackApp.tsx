@@ -125,12 +125,14 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const LEARN_SPEED = 3; // fast-forward so learning is visible in ~a minute (user can slow down to watch)
   const toggleLearning = (v: boolean) => {
     setLearning(v);
-    if (v) { setManual(false); setUntrained(false); if (speed < LEARN_SPEED) changeSpeed(LEARN_SPEED); }
+    // the worker force-starts its loop on setLearning; keep the UI transport in sync
+    if (v) { setRunning(true); setManual(false); setUntrained(false); if (speed < LEARN_SPEED) changeSpeed(LEARN_SPEED); }
     else setTrain(null);
     srcRef.current?.setLearning(v);
   };
   const resetBrain = () => {
     setLearning(true);
+    setRunning(true);
     setManual(false);
     setUntrained(false);
     setTrain(null);
@@ -170,8 +172,9 @@ export default function PlaybackApp({ hasBackend, onGoLive }: Props) {
   const toggleFullscreen = () => {
     const el = demoRef.current;
     if (!el) return;
-    if (!document.fullscreenElement) el.requestFullscreen?.().catch(() => setFs(true));
-    else document.exitFullscreen?.();
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else if (fs) setFs(false); // exit the CSS-fallback fullscreen (real FS was unavailable)
+    else el.requestFullscreen?.().catch(() => setFs(true));
   };
 
   const device = ready?.device ?? "Browser";

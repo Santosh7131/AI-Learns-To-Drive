@@ -24,6 +24,11 @@ if __name__ == "__main__":
     # honor the platform-provided $PORT (Render/Fly/Railway/HF), else RLCAR_PORT
     port = int(os.environ.get("PORT") or os.environ.get("RLCAR_PORT") or "5000")
     threads = int(os.environ.get("RLCAR_THREADS", "16"))
+    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("RLCAR_TOKEN"):
+        print(f"[serve] WARNING: binding {host} with no RLCAR_TOKEN set — the training "
+              "API (start/stop training, load/delete checkpoints) is reachable "
+              "UNAUTHENTICATED by anyone who can reach this host. Set RLCAR_TOKEN, "
+              "or RLCAR_HOST=127.0.0.1 for local-only.")
     if not SERVE_FRONTEND:
         print("[serve] WARNING: frontend/dist not found — API only. "
               "Run `cd frontend && npm run build` to serve the UI.")

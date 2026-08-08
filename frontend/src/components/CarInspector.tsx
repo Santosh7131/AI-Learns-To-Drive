@@ -67,7 +67,7 @@ export function CarInspector({ telemetryRef, carId, onClose }: Props) {
             <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">off-track</span>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label="Close inspector" title="Close" className="h-6 w-6 text-muted-foreground" onClick={onClose}>
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>

@@ -143,7 +143,10 @@ def main():
 
     os.makedirs(OUT_DIR, exist_ok=True)
     ck_name, ck_path = _find_ckpt(args.ckpt)
-    ck = torch.load(ck_path, map_location="cpu", weights_only=False)
+    try:
+        ck = torch.load(ck_path, map_location="cpu", weights_only=True)
+    except Exception:
+        ck = torch.load(ck_path, map_location="cpu", weights_only=False)  # trusted local ckpt only
     win = int(ck.get("window", 8))
     obs_dim = int(ck.get("obs_dim", CarEnv.OBS_DIM))
     trained_track = ck.get("track", "default")

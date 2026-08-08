@@ -523,7 +523,12 @@ class Trainer:
         safe, path = self._ckpt_path(name)
         if safe is None or not os.path.exists(path):
             return None
-        ck = torch.load(path, map_location="cpu", weights_only=False)
+        try:
+            ck = torch.load(path, map_location="cpu", weights_only=True)
+        except Exception:
+            # full unpickle executes arbitrary code — only safe for your OWN
+            # trusted checkpoints, never a .pt from an untrusted source.
+            ck = torch.load(path, map_location="cpu", weights_only=False)
         return {
             "name": safe,
             "globalStep": int(ck.get("global_step", 0)),
@@ -547,7 +552,10 @@ class Trainer:
         safe, path = self._ckpt_path(name)
         if safe is None or not os.path.exists(path):
             raise FileNotFoundError(name)
-        ck = torch.load(path, map_location=self.device, weights_only=False)
+        try:
+            ck = torch.load(path, map_location=self.device, weights_only=True)
+        except Exception:
+            ck = torch.load(path, map_location=self.device, weights_only=False)  # trusted local ckpt only
         # architecture guard: refuse clearly-incompatible checkpoints up front
         ck_obs, ck_win = ck.get("obs_dim"), ck.get("window")
         if ck_obs is not None and ck_obs != CarEnv.OBS_DIM:

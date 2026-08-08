@@ -40,15 +40,16 @@ export default function LiveApp({ onGoPlayground }: Props) {
 
   useEffect(() => {
     let alive = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const tryLoad = () =>
       api.track().then((t) => {
         if (!alive) return;
         setTrack(t);
         setTrackName(t.track);
-      }).catch(() => setTimeout(tryLoad, 1500));
+      }).catch(() => { if (alive) retry = setTimeout(tryLoad, 1500); });
     tryLoad();
     api.tracks().then((opts) => alive && setTrackOptions(opts)).catch(() => {});
-    return () => { alive = false; };
+    return () => { alive = false; if (retry) clearTimeout(retry); };
   }, []);
 
   const handleTrackChange = (name: string) => {

@@ -22,18 +22,6 @@ export function terrainHeight(terrain: TerrainComp[], x: number, y: number) {
   return h;
 }
 
-// Gradient (dh/dx, dh/dy) of the terrain height field.
-export function terrainGrad(terrain: TerrainComp[], x: number, y: number): [number, number] {
-  let gx = 0;
-  let gy = 0;
-  for (const t of terrain) {
-    const c = t.a * Math.cos(t.wx * x + t.wy * y + t.p);
-    gx += c * t.wx;
-    gy += c * t.wy;
-  }
-  return [gx, gy];
-}
-
 function wrap(a: number) {
   return ((a + Math.PI) % (2 * Math.PI)) - Math.PI;
 }

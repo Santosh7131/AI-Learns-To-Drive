@@ -4,6 +4,10 @@ frontend/node_modules/
 
 # builds
 frontend/dist/
+*.tsbuildinfo
+# stray tsc emits of vite.config.ts (vite reads the .ts directly)
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # python
 __pycache__/

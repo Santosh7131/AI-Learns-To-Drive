@@ -41,6 +41,7 @@ let learning = false;
 let seed0 = 1;
 let trainer: Trainer | null = null;
 let rollout: Rollout | null = null;
+let brainSeed = 12345; // rotates on each "reset brain" so successive from-scratch runs differ (yet stay reproducible)
 const HORIZON = 32;       // PPO rollout length before each update
 const LEARN_SUBSTEPS = 3; // env+train steps per rendered frame (gentle time-lapse so learning is brisk)
 let lrObs: Float32Array | null = null; // current obs [N*O]
@@ -85,9 +86,8 @@ function device(): string {
 }
 
 function metrics(): PlaybackMetrics {
-  const sps = fpsWindow.length > 1
-    ? (fpsWindow.length - 1) / ((fpsWindow[fpsWindow.length - 1] - fpsWindow[0]) / 1000)
-    : 0;
+  const span = fpsWindow.length > 1 ? fpsWindow[fpsWindow.length - 1] - fpsWindow[0] : 0;
+  const sps = span > 0 ? ((fpsWindow.length - 1) / span) * 1000 : 0;
   return {
     status: running ? "running" : "paused",
     numEnvs: N,
@@ -134,8 +134,8 @@ const meanRing = (arr: number[]) => (arr.length ? arr.reduce((s, x) => s + x, 0)
 function buildLearn(resetWeights: boolean) {
   const A = 3;
   env = new CarEnv(track!, policy!.physics as never, N, seed0 + 1, false); // effects=false → real RL episodes (crash/timeout → reset)
-  if (!trainer) trainer = new Trainer(O, A, 12345);
-  else if (resetWeights) trainer.reset(12345);
+  if (!trainer) trainer = new Trainer(O, A, brainSeed);
+  else if (resetWeights) { brainSeed = (Math.imul(brainSeed, 1664525) + 1013904223) >>> 0; trainer.reset(brainSeed); }
   rollout = new Rollout(HORIZON, N, O, A);
   lrObs = new Float32Array(N * O); lrObs.set(env.reset());
   lrRawAct = new Float32Array(N * A);
@@ -246,6 +246,9 @@ async function doStep() {
     }
   } else if (useGpu && gpu) {
     const means = await gpu.forwardBatch(w, N);
+    // a config/reset message can rebuild env/window/actions during the await;
+    // if it did, this result is stale — drop the frame rather than index OOB.
+    if (env !== e || actions !== a || window_ !== w) return;
     for (let i = 0; i < N; i++) {
       a[i * 3] = Math.max(-1, Math.min(1, means[i * 3]));
       a[i * 3 + 1] = Math.max(0, Math.min(1, means[i * 3 + 1]));
@@ -333,7 +336,20 @@ async function doStep() {
 async function loop() {
   if (!running) return;
   const t0 = performance.now();
-  await doStep();
+  try {
+    await doStep();
+  } catch (err) {
+    // a step threw (e.g. WebGPU device loss mid-forward). Fall back to the CPU
+    // policy and keep going rather than silently freezing the playground.
+    if (useGpu) {
+      useGpu = false; gpu = null;
+      console.warn("[sim] step failed — falling back to CPU:", err);
+    } else {
+      post({ type: "error", message: String(err instanceof Error ? err.message : err) });
+      stopLoop();
+      return;
+    }
+  }
   const dur = performance.now() - t0;
   // pace to the target rate, but never wait longer than needed — heavy fleets
   // that already exceed the interval just run flat-out (as fast as the hardware allows)
@@ -416,6 +432,8 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       }
     } else if (msg.type === "stop") {
       stopLoop();
+      gpu?.dispose();
+      gpu = null;
       policy = null;
       env = null;
       trainer = null;

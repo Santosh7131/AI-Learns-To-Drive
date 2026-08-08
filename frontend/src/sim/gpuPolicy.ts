@@ -306,4 +306,15 @@ export class GpuPolicy {
     this.stagingBuf!.unmap();
     return out;
   }
+
+  /** free all GPU resources (buffers + device). Call before dropping the instance. */
+  dispose() {
+    this.obsBuf?.destroy();
+    this.outBuf?.destroy();
+    this.stagingBuf?.destroy();
+    this.wBuf?.destroy();
+    this.device.destroy();
+    this.obsBuf = this.outBuf = this.stagingBuf = null;
+    this.capacity = 0;
+  }
 }

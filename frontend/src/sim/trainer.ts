@@ -56,7 +56,8 @@ class MLP {
     this.init(outScale);
   }
 
-  init(outScale: number) {
+  init(outScale: number, rng?: () => number) {
+    if (rng) this.rng = rng;
     this.layers = [];
     for (let l = 0; l < this.sizes.length - 1; l++) {
       const nin = this.sizes[l];
@@ -257,8 +258,13 @@ export class Trainer {
    *  "reset the brain to zero" the user asked for — learning restarts. */
   reset(seed?: number) {
     if (seed != null) this.rng = mulberry32(seed);
-    this.actor.init(0.01);
-    this.critic.init(1.0);
+    // Re-seed both nets from the (fresh) rng so the weights actually reflect
+    // `seed`. Each MLP captured its own rng reference at construction, so
+    // re-initializing without this would draw from the old, advanced stream and
+    // ignore `seed` entirely. Passing the same rng to both mirrors construction
+    // order (actor consumes, critic continues the shared stream).
+    this.actor.init(0.01, this.rng);
+    this.critic.init(1.0, this.rng);
     this.logStd.fill(Math.log(0.6));
     this.mLogStd.fill(0); this.vLogStd.fill(0);
     this.adamT = 0;
@@ -296,17 +302,6 @@ export class Trainer {
       }
       outLogp[i] = logp;
       outVal[i] = val[0];
-    }
-  }
-
-  /** greedy (deterministic) action means for the fleet — used for a clean
-   *  "show me the learned driver" view without exploration noise. */
-  actMean(obs: Float32Array, n: number, outAct: Float32Array) {
-    const A = this.actDim;
-    for (let i = 0; i < n; i++) {
-      const x = obs.subarray(i * this.obsDim, (i + 1) * this.obsDim);
-      const mean = this.actor.forward(x, this.aActs);
-      for (let d = 0; d < A; d++) outAct[i * A + d] = mean[d];
     }
   }
 

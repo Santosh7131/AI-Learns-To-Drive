@@ -227,7 +227,6 @@ export class CarEnv {
   private raycastOne(i: number) {
     const { lidarCorrBack: cb, lidarCorrFwd: cf, rayRange, raySamples, numRays } = this.cfg;
     const base = Math.round(this.progIdx[i]);
-    const C = cb + cf; // corridor length
     const th = this.theta[i], xi = this.x[i], yi = this.y[i];
     for (let r = 0; r < numRays; r++) {
       const ang = th + this.rayAngles[r];
@@ -246,7 +245,6 @@ export class CarEnv {
         }
         if (minD2 > this.hw2) { dist = t; break; } // first off-corridor sample
       }
-      void C;
       this.sensors[i * numRays + r] = dist / rayRange;
     }
   }

@@ -10,6 +10,7 @@ interface Props {
   onSelect: (id: number | null) => void;
   showSensors: boolean;
   showRacingLine?: boolean;
+  active?: boolean; // false when paused/idle — skip redraws to save CPU
 }
 
 interface RenderCar {
@@ -119,7 +120,7 @@ function drawCar(
   }
 }
 
-export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSensors, showRacingLine }: Props) {
+export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSensors, showRacingLine, active = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const rendered = useRef<RenderCar[]>([]);
@@ -131,6 +132,8 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
   showSensorsRef.current = showSensors;
   const showRacingLineRef = useRef(showRacingLine);
   showRacingLineRef.current = showRacingLine;
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const transformRef = useRef<{
     scale: number;
     offX: number;
@@ -204,10 +207,17 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
     let lastT = performance.now();
     let frameStep = -1;              // last telemetry step ingested
     let frameTime = performance.now(); // wall-clock when it arrived (for velocity from truth deltas)
+    let drawnOnce = false;
     const draw = (now: number) => {
       const delta = Math.min((now - lastT) / 1000, 0.05);
       lastT = now;
       if (!syncSize()) {
+        raf = requestAnimationFrame(draw);
+        return;
+      }
+      // paused/idle: the sim isn't advancing, so retain the last frame and skip
+      // the redraw work (canvas keeps its pixels). Draw once so it's never blank.
+      if (!activeRef.current && drawnOnce) {
         raf = requestAnimationFrame(draw);
         return;
       }
@@ -479,6 +489,7 @@ export function CarCanvas({ track, telemetryRef, selectedId, onSelect, showSenso
         ctx.fillText(String(i), cx, cy - CAR_W * scale - 5 * dpr);
       });
 
+      drawnOnce = true;
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);

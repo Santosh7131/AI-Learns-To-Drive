@@ -107,7 +107,7 @@ export function Arena({ track, telemetryRef, numCars, hud, active = true, fullsc
       {view === "3d" ? (
         <ErrorBoundary
           fallback={
-            <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} showRacingLine={racingLine} />
+            <CarCanvas track={track} telemetryRef={telemetryRef} selectedId={selectedCar} onSelect={setSelectedCar} showSensors={showSensors} showRacingLine={racingLine} active={active} />
           }
         >
           <Suspense
